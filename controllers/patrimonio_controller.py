@@ -5,16 +5,25 @@ class PatrimonioController:
         self.service = PatrimonioService()
 
     def procesar_codigo_escaneado(self, codigo: str):
-        """Maneja el evento de escaneo."""
-        producto = self.service.buscar_producto_por_codigo(codigo)
-        if producto:
-            self.service.registrar_escaneo(producto)
-            return {"encontrado": True, "producto": producto}
-        else:
-            return {"encontrado": False, "codigo": codigo}
+        return self.service.procesar_codigo(codigo)
+    
+    # def procesar_codigo_escaneado(self, codigo: str):
+    #     """Maneja el evento de escaneo."""
+    #     producto = self.service.buscar_producto_por_codigo(codigo)
+    #     if producto:
+    #         self.service.registrar_escaneo(producto)
+    #         return {"encontrado": True, "producto": producto}
+    #     else:
+    #         return {"encontrado": False, "codigo": codigo}
 
-    def agregar_producto_manual(self, codigo: str, nombre: str, categoria: str):
-        return self.service.crear_y_registrar_producto(codigo, nombre, categoria)
+    def agregar_producto_manual(self, datos_producto: dict):
+        return self.service.crear_y_registrar_producto(datos_producto)
 
-    def exportar_planilla(self, ruta: str) -> bool:
-        return self.service.exportar_planilla_diaria(ruta)
+    def limpiar_sesion_actual(self):
+        self.service.limpiar_sesion()
+
+    def generar_planilla_relevo(self, datos_encabezado: dict, ruta_salida: str):
+        return self.service.generar_planilla_relevo(datos_encabezado, ruta_salida)
+
+    def eliminar_producto_sesion(self, indice: int)-> bool:
+        return self.service.eliminar_producto_por_indice(indice)
