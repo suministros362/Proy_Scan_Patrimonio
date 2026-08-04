@@ -8,6 +8,18 @@ class PatrimonioService:
         self.generator = PlanillaGenerator()
         self.inventario_general = self.repository.obtener_inventario()
         self.escaneados_sesion: list[Producto] = []
+        self.sector_actual = ""  # Nuevo atributo para almacenar el sector actual
+
+        self.colores_disponibles = [
+            "#E6F3FF",  # Azul claro
+            "#E6FFE6",  # Verde claro
+            "#FFF0F5",  # Rosa claro
+            "#FFF2CC",  # Amarillo pastel
+            "#E8DAEF",  # Violeta claro
+            "#E0F7FA",  # Cian claro
+            "#FFE0B2",  # Naranja claro
+        ]
+        self.mapa_colores_sectores = {}  # Diccionario para mapear sectores a colores
 
     def buscar_producto_por_codigo(self, codigo_escaneado: str) -> Producto | None:
         codigo_limpio = str(codigo_escaneado).strip()
@@ -50,6 +62,7 @@ class PatrimonioService:
     def registrar_escaneo(self, producto: Producto):
         """Agrega el producto al historial de la sesión."""
         self.escaneados_sesion.append(producto)
+        producto.sector = self.sector_actual  # Asignar el sector actual al producto escaneado
 
     def crear_y_registrar_producto(self, datos: dict) -> Producto:
         """Crea un nuevo objeto Producto y lo agrega EXCLUSIVAMENTE a la lista de la sesión activa. NO toca el inventrio maestro ni el Excel."""
@@ -103,6 +116,8 @@ class PatrimonioService:
     def limpiar_sesion(self):
         """Limpia la lista de productos escaneados en la sesión actual."""
         self.escaneados_sesion.clear()
+        self.sector_actual = ""  # También resetea el sector actual
+        self.mapa_colores_sectores.clear()  # Limpiar el mapa de colores de sectores
 
     def generar_planilla_relevo(self, datos_encabezado: dict, ruta_salida: str) -> bool:
         """Genera la planilla de relevo con los productos escaneados en la sesión."""
@@ -116,6 +131,19 @@ class PatrimonioService:
             self.escaneados_sesion.pop(indice)
             return True
         return False
+
+    def cambiar_sector_actual(self, nuevo_sector: str):
+        """Actualizar el sector activo y le asigna un color unico si es nuevo."""
+        self.sector_actual = nuevo_sector.strip()
+
+        if self.sector_actual and self.sector_actual not in self.mapa_colores_sectores:
+            #Asignamos el siguiente color disponible o rotamos en la lista
+            idx_color = len(self.mapa_colores_sectores)%len(self.colores_disponibles)
+            self.mapa_colores_sectores[self.sector_actual] = self.colores_disponibles[idx_color]
+
+    def obtener_color_sector(self, sector: str) -> str:
+        """Devuelve el solor HEX asignado a un sector (o blanco si no tiene)."""
+        return self.mapa_colores_sectores.get(sector)
 
 #----------------------------------------------------------------------------------
 #-----Primer servicio de la app, encargado de la lógica de negocio y de la comunicación con el repositorio de datos.

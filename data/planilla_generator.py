@@ -45,6 +45,7 @@ class PlanillaGenerator:
                 ws[f"F{fila}"] = prod.modelo
                 ws[f"G{fila}"] = prod.nro_serie
                 ws[f"H{fila}"] = prod.observaciones  # Agregando la columna de observaciones
+                ws[f"I{fila}"] = prod.sector.upper()  # Agregando la columna de sector
 
                 # Aplicar alineación
                 ws[f"A{fila}"].alignment = alineacion_centrado
@@ -55,6 +56,7 @@ class PlanillaGenerator:
                 ws[f"F{fila}"].alignment = alineacion_texto
                 ws[f"G{fila}"].alignment = alineacion_centrado
                 ws[f"H{fila}"].alignment = alineacion_texto  # Alineación para observaciones
+                ws[f"I{fila}"].alignment = alineacion_texto  # Alineación para sector
 
             # 3. Guardar en el destino elegido
             wb.save(ruta_salida)

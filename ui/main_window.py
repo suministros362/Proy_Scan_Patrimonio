@@ -55,11 +55,21 @@ class MainWindow(tb.Window):
         btn_scan = tb.Button(frame_scan, text="Procesar", command=self.on_escanear, bootstyle="primary")
         btn_scan.pack(side="left", padx=5)
 
+        #Botón para definir el sector actual
+        btn_sector = tb.Button(frame_scan, text="📍 Definir Sector", command=self.on_cambiar_sector, bootstyle="info-outline")
+        btn_sector.pack(side="left", padx=5)
+
+        #Label indicador de sector actual (Opcional pero muy útil para el usuario)
+        self.label_sector_activo = tb.Label(frame_scan, text="Sector: ----", bootstyle="primary", font=("Helvetica", 10, "bold"), foreground="orange")
+        self.label_sector_activo.pack(side="left", padx=10)
+
+        
+
         # --- TABLA DE RESULTADOS (8 CAMPOS) ---
         frame_tabla = tb.LabelFrame(self, text=" Bienes Escaneados ", padding=10, bootstyle="info")
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=10)
 
-        columnas = ("nro","nro_inv", "nro_nuevo", "elemento", "marca", "modelo", "nro_serie", "oficina", "dependencia", "observaciones")
+        columnas = ("nro","nro_inv", "nro_nuevo", "elemento", "marca", "modelo", "nro_serie", "oficina", "dependencia", "observaciones", "sector")
         
         self.tabla = tb.Treeview(frame_tabla, columns=columnas, show="headings", bootstyle="info")
         
@@ -74,7 +84,7 @@ class MainWindow(tb.Window):
         self.tabla.heading("oficina", text="Oficina")
         self.tabla.heading("dependencia", text="Dependencia")
         self.tabla.heading("observaciones", text="Observaciones")
-
+        self.tabla.heading("sector", text="Sector")
         # Anchos de columna optimizados
         self.tabla.column("nro", width=50, anchor="center")
         self.tabla.column("nro_inv", width=100, anchor="center")
@@ -86,6 +96,7 @@ class MainWindow(tb.Window):
         self.tabla.column("oficina", width=110, anchor="w")
         self.tabla.column("dependencia", width=130, anchor="w")
         self.tabla.column("observaciones", width=200, anchor="w")
+        self.tabla.column("sector", width=110, anchor="center")
 
         # Permitir doble clic en la tabla para editar
         self.tabla.bind("<Double-1>", self.on_modificar_observacion)
@@ -104,11 +115,11 @@ class MainWindow(tb.Window):
         # Botón para modificar la observación del ítem seleccionado en la tabla
         btn_modificar = tb.Button(
             frame_bottom, 
-            text="✏️ Modificar Registro", 
+            text="✏️ Agregar/Modificar Observación", 
             bootstyle="warning-outline", 
             command=self.on_modificar_observacion
         )
-        btn_modificar.pack(side="left")
+        btn_modificar.pack(side="left", padx=10)
 
         # Botón para eliminar el ítem seleccionado en la tabla
         btn_eliminar = tb.Button(
@@ -117,7 +128,7 @@ class MainWindow(tb.Window):
             bootstyle="danger-outline", 
             command=self.on_eliminar_registro
         )
-        btn_eliminar.pack(side="left")
+        btn_eliminar.pack(side="left", padx=10)
 
         btn_planilla1 = tb.Button(
             frame_bottom,
@@ -155,6 +166,7 @@ class MainWindow(tb.Window):
         )
         if respuesta:
             self.controller.limpiar_sesion_actual()
+            self.label_sector_activo.config(text="Sector Actual: Ninguno", bootstyle="secondary")
             # Limpiar filas del Treeview
             for item in self.tabla.get_children():
                 self.tabla.delete(item)
@@ -222,12 +234,12 @@ class MainWindow(tb.Window):
         exito = self.controller.generar_planilla_relevo(dialogo.datos, ruta_salida)
 
         if exito:
-            # tb.dialogs.Messagebox.show_info(
-            #     f"Planilla generada con éxito en:\n{ruta_salida}",
-            #     title="Reporte Creado",
-            #     parent=self
-            # )
-            messagebox.showinfo("Éxito", f"Planilla generada correctamente en:\n{ruta_salida}")
+            tb.dialogs.Messagebox.show_info(
+                f"Planilla generada con éxito en:\n{ruta_salida}",
+                title="Reporte Creado",
+                parent=self
+            )
+            #messagebox.showinfo("Éxito", f"Planilla generada correctamente en:\n{ruta_salida}")
         else:
             # tb.dialogs.Messagebox.show_error(
             #     "No se pudo generar la planilla. Asegúrate de tener la plantilla 'plantilla_relevo.xlsx' en la raíz del proyecto y que no esté en uso.",
@@ -296,10 +308,18 @@ class MainWindow(tb.Window):
             self.tabla.delete(item)
 
         for idx, p in enumerate(self.controller.service.escaneados_sesion, start=1):
+            sector_prod = getattr(p, "sector", "")  or "Sin Sector"# Obtener el sector del producto, si existe
+            tag_name = f"tag_{sector_prod}"
+
+            if sector_prod in self.controller.service.mapa_colores_sectores:
+                color_fondo = self.controller.service.mapa_colores_sectores[sector_prod]
+                self.tabla.tag_configure(tag_name, background=color_fondo)
+
+
             self.tabla.insert("", "end", values=(
                 idx, p.nro_inventario, p.nro_nuevo, p.elemento, 
-                p.marca, p.modelo, p.nro_serie, p.oficina, p.dependencia, p.observaciones
-            ))
+                p.marca, p.modelo, p.nro_serie, p.oficina, p.dependencia, p.observaciones, p.sector.upper()
+            ), tags=(tag_name,))
 
     def on_eliminar_registro(self):
         """Elimina la fila seleccionada y recalcula la numeración."""
@@ -325,6 +345,27 @@ class MainWindow(tb.Window):
             self.controller.eliminar_producto_sesion(index)
             self.refrescar_tabla()
         self.entry_codigo.focus()
+
+    def on_cambiar_sector(self):
+        """Abre un diálogo para que el usuario defina el sector actual."""
+        sector = tb.dialogs.Querybox.get_string(
+            prompt="Ingrese el nombre del sector actual:",
+            title="Definir Sector",
+            parent=self
+        )
+
+        if sector is not None: 
+            sector = sector.strip()
+            self.controller.service.cambiar_sector_actual(sector)
+
+            if sector:
+                self.label_sector_activo.config(text=f"Sector: {sector.upper()}", bootstyle="info")
+            else:
+                self.label_sector_activo.config(text="Sector: ----", bootstyle="secondary")
+
+            self.refrescar_tabla()  # Actualiza la tabla para reflejar el cambio de sector
+        self.entry_codigo.focus()
+
 #-----------------------------------------------------------------------------------------
 #------------------Primera Version de la ventana principal con ttkbootstrap---------------
 #-----------------------------------------------------------------------------------------

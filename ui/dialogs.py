@@ -12,7 +12,7 @@ class AgregarProductoDialog(tb.Toplevel):
         self.producto_creado = None
 
         self.title("Agregar Producto Manual")
-        self.geometry("500x750")
+        self.geometry("500x800")
         self.resizable(False, False)
         
         # Bloquear la ventana padre mientras esta esté abierta
@@ -80,6 +80,10 @@ class AgregarProductoDialog(tb.Toplevel):
         self.entry_obs = tb.Entry(grid_frame)
         self.entry_obs.grid(row=8, column=1, sticky="ew", padx=(10, 0), pady=5)
 
+        tb.Label(grid_frame, text="Sector:").grid(row=9, column=0, sticky="w", pady=5)
+        self.entry_sector = tb.Entry(grid_frame)
+        self.entry_sector.grid(row=9, column=1, sticky="ew", padx=(10, 0), pady=5)
+
         grid_frame.columnconfigure(1, weight=1)
 
         # Barra de Estado / Carga
@@ -132,7 +136,8 @@ class AgregarProductoDialog(tb.Toplevel):
             "nro_serie": self.entry_serie.get().strip(),
             "oficina": self.entry_oficina.get().strip(),
             "dependencia": self.entry_dependencia.get().strip(),
-            "observaciones": self.entry_obs.get().strip()
+            "observaciones": self.entry_obs.get().strip(),
+            "sector": self.entry_sector.get().strip()
         }
 
         # Ejecutar agregación en segundo plano
