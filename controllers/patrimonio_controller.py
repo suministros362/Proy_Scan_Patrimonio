@@ -27,3 +27,7 @@ class PatrimonioController:
 
     def eliminar_producto_sesion(self, indice: int)-> bool:
         return self.service.eliminar_producto_por_indice(indice)
+
+    def exportar_busqueda_excel(self, resultados: list, ruta_salida: str) -> bool:
+        """Llama al generador de planillas enviándole los datos de búsqueda."""
+        return self.service.busqueda_masiva(resultados, ruta_salida)

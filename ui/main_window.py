@@ -2,9 +2,12 @@ import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 from tkinter import messagebox, filedialog
 
+from datetime import datetime
+
 from ui.observacion_dialogs import EditarObservacionDialog
 from ui.dialogs import AgregarProductoDialog
 from ui.planillas_dialogs import PlanillaRelevoDialog
+
 
 class MainWindow(tb.Window):
     def __init__(self, controller):
@@ -140,19 +143,19 @@ class MainWindow(tb.Window):
 
         btn_planilla2 = tb.Button(
             frame_bottom,
-            text="Planilla 2",
+            text="Planilla de Búsqueda Masiva",
             bootstyle="info-outline",
-            command=lambda: print("Generar Planilla 2")
+            command=self.on_generar_busqueda_masiva
         )
         btn_planilla2.pack(side="left", padx=10)
 
-        btn_planilla3 = tb.Button(
-            frame_bottom,
-            text="Planilla 3",
-            bootstyle="warning-outline",
-            command=lambda: print("Generar Planilla 3")
-        )
-        btn_planilla3.pack(side="left", padx=10)
+        # btn_planilla3 = tb.Button(
+        #     frame_bottom,
+        #     text="Planilla 3",
+        #     bootstyle="warning-outline",
+        #     command=lambda: print("Generar Planilla 3")
+        # )
+        # btn_planilla3.pack(side="left", padx=10)
 
     def on_limpiar_sesion(self):
         """Pide confirmación y limpia la sesión actual y la tabla."""
@@ -166,7 +169,7 @@ class MainWindow(tb.Window):
         )
         if respuesta:
             self.controller.limpiar_sesion_actual()
-            self.label_sector_activo.config(text="Sector Actual: Ninguno", bootstyle="secondary")
+            self.label_sector_activo.config(text="Sector: ----", bootstyle="secondary")
             # Limpiar filas del Treeview
             for item in self.tabla.get_children():
                 self.tabla.delete(item)
@@ -215,41 +218,107 @@ class MainWindow(tb.Window):
         dialogo = PlanillaRelevoDialog(self)
         self.wait_window(dialogo)
 
-        if not dialogo.datos:
+        ruta_salida = getattr(dialogo, "ruta_salida", None)
+        datos = getattr(dialogo, "datos", None)
+
+        if ruta_salida and datos:
+            exito = self.controller.generar_planilla_relevo(datos, ruta_salida)
+            if exito:
+                tb.dialogs.Messagebox.show_info(
+                    f"Planilla generada con éxito en:\n{ruta_salida}",
+                    title="Reporte Creado",
+                    parent=self
+                )
+            else:
+                tb.dialogs.Messagebox.show_error(
+                    "No se pudo generar la planilla. Asegúrate de tener la plantilla 'plantilla_relevo.xlsx' en la raíz del proyecto y que no esté en uso.",
+                    title="Error de Generación",
+                    parent=self
+                )
             self.entry_codigo.focus()
-            return  # Canceló el diálogo
 
-        # 2. Elegir dónde guardar el Excel generado
-        ruta_salida = filedialog.asksaveasfilename(
-            defaultextension=".xlsx",
-            filetypes=[("Archivos de Excel", "*.xlsx")],
-            title="Guardar Planilla de Relevo Como..."
-        )
+    
+        self.entry_codigo.focus()    
 
-        if not ruta_salida:
+    def on_generar_busqueda_masiva(self):
+        """Flujo para generar la planilla de búsqueda masiva."""
+
+        resultados = self.controller.service.escaneados_sesion  # Lista de productos escaneados en la sesión actual
+
+        if not resultados:
+            messagebox.showwarning("Atención", "No hay elementos escaneados en la sesión actual.", title="Sin Datos", parent=self)
             self.entry_codigo.focus()
             return
 
-        # 3. Generar Excel
-        exito = self.controller.generar_planilla_relevo(dialogo.datos, ruta_salida)
+        fecha_str = datetime.now().strftime("%d-%m-%Y")
+        nombre_sugerido = f"busqueda_masiva_{fecha_str}.xls"
+        
+        # 2. Elegir dónde guardar el Excel generado
+        ruta_salida = filedialog.asksaveasfilename(
+            initialfile=nombre_sugerido,
+            defaultextension=".xls",
+            filetypes=[("Archivos de Excel 97-2003", "*.xls")],
+            title="Guardar Planilla de Búsqueda Masiva Como..."
+        )
 
-        if exito:
-            tb.dialogs.Messagebox.show_info(
-                f"Planilla generada con éxito en:\n{ruta_salida}",
-                title="Reporte Creado",
-                parent=self
+        if ruta_salida:
+            exito = self.controller.exportar_busqueda_excel(
+                resultados=resultados,
+                ruta_salida=ruta_salida
             )
+
+            if exito:
+                tb.dialogs.Messagebox.show_info(
+                    f"Planilla de búsqueda masiva generada exitosamente en:\n{ruta_salida}",
+                    title="Exportación Exitosa",
+                    parent=self
+                )
+            else:
+                tb.dialogs.Messagebox.show_error(
+                    "Ocurrió un error al intentar generar la plantilla .xls.",
+                    title="Error de Exportación",
+                    parent=self
+                )
+
+        # if not ruta_salida:
+        #     self.entry_codigo.focus()
+        #     return
+
+        # # 3. Generar Excel
+        # exito = self.controller.generar_planilla_relevo(dialogo.datos, ruta_salida)
+
+        # if exito:
+        #     tb.dialogs.Messagebox.show_info(
+        #         f"Planilla generada con éxito en:\n{ruta_salida}",
+        #         title="Reporte Creado",
+        #         parent=self
+        #     )
             #messagebox.showinfo("Éxito", f"Planilla generada correctamente en:\n{ruta_salida}")
-        else:
+        # else:
             # tb.dialogs.Messagebox.show_error(
             #     "No se pudo generar la planilla. Asegúrate de tener la plantilla 'plantilla_relevo.xlsx' en la raíz del proyecto y que no esté en uso.",
             #     title="Error de Generación",
             #     parent=self
             # )
-            messagebox.showerror("Error", "No se pudo generar la planilla. Verifica que la plantilla no esté en uso.")
-        self.entry_codigo.focus()    
+            # messagebox.showerror("Error", "No se pudo generar la planilla. Verifica que la plantilla no esté en uso.")
 
+    # def _generar_nombre_excel_predeterminado(self) -> str:
+    #     """Genera un nombre de archivo limpio basado en piso, oficina, área y la fecha actual."""
+    #     # 1. Obtener los valores (ajusta las variables según dónde tengas almacenados estos datos)
+    #     piso = getattr(self.controller.service, "piso", "").strip() or "Piso"
+    #     oficina = getattr(self.controller.service, "oficina", "").strip() or "Oficina"
+    #     area = getattr(self.controller.service, "area", "").strip() or "Area"
 
+    #     # 2. Obtener fecha actual en formato DD-MM-YYYY
+    #     fecha_str = datetime.now().strftime("%d-%m-%Y")
+
+    #     # 3. Limpiar caracteres no válidos para nombres de archivo en Windows/Linux (\ / : * ? " < > |)
+    #     piso_clean = re.sub(r'[\\/*?:"<>|]', '', piso).replace(' ', '_')
+    #     oficina_clean = re.sub(r'[\\/*?:"<>|]', '', oficina).replace(' ', '_')
+    #     area_clean = re.sub(r'[\\/*?:"<>|]', '', area).replace(' ', '_')
+
+    #     # 4. Retornar el nombre combinado con guiones bajos
+    #     return f"{piso_clean}_{oficina_clean}_{area_clean}_{fecha_str}.xlsx"
 
     def alternar_tema(self):
         if "selected" in self.switch_tema.state():
@@ -309,11 +378,20 @@ class MainWindow(tb.Window):
 
         for idx, p in enumerate(self.controller.service.escaneados_sesion, start=1):
             sector_prod = getattr(p, "sector", "")  or "Sin Sector"# Obtener el sector del producto, si existe
-            tag_name = f"tag_{sector_prod}"
+            es_par = (idx % 2 == 0)  # Determinar si el índice es par
 
-            if sector_prod in self.controller.service.mapa_colores_sectores:
-                color_fondo = self.controller.service.mapa_colores_sectores[sector_prod]
-                self.tabla.tag_configure(tag_name, background=color_fondo)
+            # Nombre único de tag combinando el sector y la paridad para diferenciar colores
+            tag_name = f"tag_{hash(sector_prod)}_{'par' if es_par else 'impar'}"
+
+            #Obtener el color exacto desde el servicio
+            color_bg = self.controller.service.obtener_color_sector(sector_prod, es_par=es_par)
+
+            # Configurar el tag con el color de fondo correspondiente
+            self.tabla.tag_configure(tag_name, background=color_bg)
+
+            # if sector_prod in self.controller.service.mapa_colores_sectores:
+            #     color_fondo = self.controller.service.mapa_colores_sectores[sector_prod]
+            #     self.tabla.tag_configure(tag_name, background=color_fondo)
 
 
             self.tabla.insert("", "end", values=(

@@ -11,13 +11,13 @@ class PatrimonioService:
         self.sector_actual = ""  # Nuevo atributo para almacenar el sector actual
 
         self.colores_disponibles = [
-            "#E6F3FF",  # Azul claro
-            "#E6FFE6",  # Verde claro
-            "#FFF0F5",  # Rosa claro
-            "#FFF2CC",  # Amarillo pastel
-            "#E8DAEF",  # Violeta claro
-            "#E0F7FA",  # Cian claro
-            "#FFE0B2",  # Naranja claro
+            ("#E6F3FF", "#D0E7FF"),  # Azul pastel
+            ("#E6FFE6", "#D1FFD1"),  # Verde pastel
+            ("#FFF0F5", "#FFE0EB"),  # Rosa pastel
+            ("#FFF2CC", "#FFE599"),  # Amarillo pastel
+            ("#E8DAEF", "#D7BDE2"),  # Violeta pastel
+            ("#E0F7FA", "#B2EBF2"),  # Cian pastel
+            ("#FFE0B2", "#FFCC80"),  # Naranja pastel
         ]
         self.mapa_colores_sectores = {}  # Diccionario para mapear sectores a colores
 
@@ -125,6 +125,12 @@ class PatrimonioService:
             return False
         return self.generator.generar_relevo(datos_encabezado=datos_encabezado, productos=self.escaneados_sesion, ruta_salida=ruta_salida)
 
+    def busqueda_masiva(self, resultados: list, ruta_salida: str) -> bool:
+        """Genera la planilla de búsqueda masiva con los resultados proporcionados."""
+        if not resultados:
+            return False
+        return self.generator.generar_busqueda(resultados=resultados, ruta_salida=ruta_salida)
+
     def eliminar_producto_por_indice(self, indice: int) -> bool:
         """Elimina un producto de la sesión por su índice en la lista."""
         if 0 <= indice < len(self.escaneados_sesion):
@@ -141,9 +147,14 @@ class PatrimonioService:
             idx_color = len(self.mapa_colores_sectores)%len(self.colores_disponibles)
             self.mapa_colores_sectores[self.sector_actual] = self.colores_disponibles[idx_color]
 
-    def obtener_color_sector(self, sector: str) -> str:
-        """Devuelve el solor HEX asignado a un sector (o blanco si no tiene)."""
-        return self.mapa_colores_sectores.get(sector)
+    def obtener_color_sector(self, sector: str, es_par: bool = False) -> str:
+        """Devuelve el color HEX asignado a un sector (o blanco si no tiene)."""
+        if sector in self.mapa_colores_sectores:
+            color_impar, color_par = self.mapa_colores_sectores[sector]
+            # Retorna el color correspondiente según la paridad del índice del sector
+            return color_par if es_par else color_impar
+        #
+        return "#EBEAEA" if es_par else None # Color blanco por defecto si no tiene asignado
 
 #----------------------------------------------------------------------------------
 #-----Primer servicio de la app, encargado de la lógica de negocio y de la comunicación con el repositorio de datos.
