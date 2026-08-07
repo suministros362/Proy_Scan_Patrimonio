@@ -1,11 +1,30 @@
 import pandas as pd
 import os
+import sys
 from models.producto import Producto
 from tkinter import messagebox
 
+def obtener_ruta_recurso(ruta_relativa: str) -> str:
+    """
+    Obtiene la ruta absoluta para acceder a archivos/carpetas internos,
+    compatible con PyInstaller y entorno de desarrollo normal.
+    """
+    if hasattr(sys, '_MEIPASS'):
+        # Ruta en el ejecutable descompilado en runtime (carpeta Temp)
+        return os.path.join(sys._MEIPASS, ruta_relativa)
+    # Ruta en entorno de desarrollo local (raíz del proyecto)
+    return os.path.join(os.path.abspath("."), ruta_relativa)
+
 class ExcelRepository:
-    def __init__(self, file_path=os.path.join("archivos", "inventario.xlsx")):
-        self.file_path = file_path
+    # def __init__(self, file_path=os.path.join("archivos", "inventario.xlsx")):
+    #     self.file_path = file_path
+
+    def __init__(self, file_path=None):
+        # 📌 Si no se pasa una ruta explícita, resuelve la ruta interna correcta
+        if file_path is None:
+            self.file_path = obtener_ruta_recurso(os.path.join("archivos", "inventario.xlsx"))
+        else:
+            self.file_path = file_path
 
     def obtener_inventario(self) -> list[Producto]:
         """Lee el Excel y convierte cada fila en un objeto Producto con los 8 campos clave."""

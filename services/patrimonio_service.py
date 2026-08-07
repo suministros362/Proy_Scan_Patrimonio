@@ -10,7 +10,8 @@ class PatrimonioService:
         self.escaneados_sesion: list[Producto] = []
         self.sector_actual = ""  # Nuevo atributo para almacenar el sector actual
 
-        self.colores_disponibles = [
+        # Paleta para MODO CLARO (colores pastel con variantes clara y ligeramente más oscura)
+        self.colores_modo_claro = [
             ("#E6F3FF", "#D0E7FF"),  # Azul pastel
             ("#E6FFE6", "#D1FFD1"),  # Verde pastel
             ("#FFF0F5", "#FFE0EB"),  # Rosa pastel
@@ -19,7 +20,31 @@ class PatrimonioService:
             ("#E0F7FA", "#B2EBF2"),  # Cian pastel
             ("#FFE0B2", "#FFCC80"),  # Naranja pastel
         ]
-        self.mapa_colores_sectores = {}  # Diccionario para mapear sectores a colores
+
+        # Paleta para MODO OSCURO (colores profundos/saturados para no encandilar y permitir lectura blanca)
+        self.colores_modo_oscuro = [
+            ("#1A365D", "#2A4365"),  # Azul oscuro
+            ("#1C4532", "#22543D"),  # Verde oscuro
+            ("#4A154B", "#611F69"),  # Violeta oscuro
+            ("#5B3A00", "#744A00"),  # Café/Amarillo oscuro
+            ("#4C1D95", "#5B21B6"),  # Púrpura oscuro
+            ("#083344", "#164E63"),  # Cian oscuro
+            ("#6C2BD9", "#7C3AED"),  # Naranja/Marrón oscuro
+        ]
+
+        # Guardamos ambas listas en el mapa de colores
+        self.mapa_colores_sectores = {}
+
+        # self.colores_disponibles = [
+        #     ("#E6F3FF", "#D0E7FF"),  # Azul pastel
+        #     ("#E6FFE6", "#D1FFD1"),  # Verde pastel
+        #     ("#FFF0F5", "#FFE0EB"),  # Rosa pastel
+        #     ("#FFF2CC", "#FFE599"),  # Amarillo pastel
+        #     ("#E8DAEF", "#D7BDE2"),  # Violeta pastel
+        #     ("#E0F7FA", "#B2EBF2"),  # Cian pastel
+        #     ("#FFE0B2", "#FFCC80"),  # Naranja pastel
+        # ]
+        # self.mapa_colores_sectores = {}  # Diccionario para mapear sectores a colores
 
     def buscar_producto_por_codigo(self, codigo_escaneado: str) -> Producto | None:
         codigo_limpio = str(codigo_escaneado).strip()
@@ -67,6 +92,12 @@ class PatrimonioService:
     def crear_y_registrar_producto(self, datos: dict) -> Producto:
         """Crea un nuevo objeto Producto y lo agrega EXCLUSIVAMENTE a la lista de la sesión activa. NO toca el inventrio maestro ni el Excel."""
 
+        sector_ingresado = datos.get("sector", "").strip() or self.sector_actual
+
+        if sector_ingresado:
+            # self.cambiar_sector_actual(sector_ingresado)  # Actualiza el sector actual y asigna color si es nuevo
+            self.asignar_color_a_sector(sector_ingresado)  # Asigna color al sector si es nuevo
+
         nuevo_prod = Producto(
             nro_inventario=datos.get("nro_inventario", ""),
             nro_nuevo=datos.get("nro_nuevo", ""),
@@ -76,33 +107,11 @@ class PatrimonioService:
             nro_serie=datos.get("nro_serie", ""),
             oficina=datos.get("oficina", ""),
             dependencia=datos.get("dependencia", ""),
-            observaciones=datos.get("observaciones", "Alta manual en sesión")
+            observaciones=datos.get("observaciones", "Alta manual en sesión"),
+            sector=sector_ingresado
         )
 
-    # def crear_y_registrar_producto(self, nro_inventario="", nro_nuevo="", elemento="", 
-    #                                marca="", modelo="", nro_serie="", oficina="", dependencia=""):
-    #     """Crea un producto nuevo y solo lo agrega a la sesión si se pudo guardar en Excel."""
-        
-    #     nuevo_prod = Producto(
-    #         nro_inventario=nro_inventario,
-    #         nro_nuevo=nro_nuevo,
-    #         elemento=elemento,
-    #         marca=marca,
-    #         modelo=modelo,
-    #         nro_serie=nro_serie,
-    #         oficina=oficina,
-    #         dependencia=dependencia
-    #     )
-        
-        # 1. Intentar guardar en disco (Excel Maestro)
-        # guardado_ok = self.repository.guardar_nuevo_producto(nuevo_prod)
-        
-        # 2. Si el guardado falló (ej. Excel bloqueado), abortamos el registro en memoria
-        #if not guardado_ok:
-        #    return False, None
-            
-        # 3. Si se guardó con éxito en el Excel, actualizamos la memoria local y la sesión
-        #self.inventario_general.append(nuevo_prod)
+   
         self.escaneados_sesion.append(nuevo_prod)
         
         return nuevo_prod
@@ -139,22 +148,69 @@ class PatrimonioService:
         return False
 
     def cambiar_sector_actual(self, nuevo_sector: str):
-        """Actualizar el sector activo y le asigna un color unico si es nuevo."""
+        """Actualizar el sector activo y le asigna un color único si es nuevo."""
         self.sector_actual = nuevo_sector.strip()
 
         if self.sector_actual and self.sector_actual not in self.mapa_colores_sectores:
-            #Asignamos el siguiente color disponible o rotamos en la lista
-            idx_color = len(self.mapa_colores_sectores)%len(self.colores_disponibles)
-            self.mapa_colores_sectores[self.sector_actual] = self.colores_disponibles[idx_color]
+            # Asignamos el siguiente índice de color rotando en la lista
+            idx_color = len(self.mapa_colores_sectores) % len(self.colores_modo_claro)
+            
+            # 🔴 Antes: self.mapa_colores_sectores[sector] = idx_color
+            # 🟢 Ahora: guardamos la posición con self.sector_actual
+            self.mapa_colores_sectores[self.sector_actual] = idx_color
+    # def cambiar_sector_actual(self, nuevo_sector: str):
+    #     """Actualizar el sector activo y le asigna un color unico si es nuevo."""
+    #     self.sector_actual = nuevo_sector.strip()
 
-    def obtener_color_sector(self, sector: str, es_par: bool = False) -> str:
-        """Devuelve el color HEX asignado a un sector (o blanco si no tiene)."""
+    #     if self.sector_actual and self.sector_actual not in self.mapa_colores_sectores:
+    #         #Asignamos el siguiente color disponible o rotamos en la lista
+    #         idx_color = len(self.mapa_colores_sectores) % len(self.colores_modo_claro)
+    #         self.mapa_colores_sectores[sector] = idx_color
+
+
+    def asignar_color_a_sector(self, sector: str):
+        """Asigna un índice de color a un sector si no lo tiene aún."""
+        if sector not in self.mapa_colores_sectores:
+            idx = len(self.mapa_colores_sectores) % len(self.colores_modo_claro)
+            self.mapa_colores_sectores[sector] = idx
+
+    def obtener_color_sector(self, sector: str, es_par: bool = False, es_modo_oscuro: bool = False) -> tuple[str, str]:
+        """
+        Devuelve una tupla (color_fondo, color_texto) asignada al sector.
+        Garantiza contraste óptimo según la paridad y el modo (claro/oscuro).
+        """
         if sector in self.mapa_colores_sectores:
-            color_impar, color_par = self.mapa_colores_sectores[sector]
-            # Retorna el color correspondiente según la paridad del índice del sector
-            return color_par if es_par else color_impar
-        #
-        return "#EBEAEA" if es_par else None # Color blanco por defecto si no tiene asignado
+            idx = self.mapa_colores_sectores[sector]
+            
+            if es_modo_oscuro:
+                colores = self.colores_modo_oscuro[idx % len(self.colores_modo_oscuro)]
+                bg = colores[1] if es_par else colores[0]
+                fg = "#FFFFFF"  # Texto blanco siempre en modo oscuro
+            else:
+                colores = self.colores_modo_claro[idx % len(self.colores_modo_claro)]
+                bg = colores[1] if es_par else colores[0]
+                fg = "#1F2937"  # Texto oscuro en modo claro
+
+            return bg, fg
+
+        # Colores por defecto si el sector no tiene color asignado
+        if es_modo_oscuro:
+            bg = "#2B2B2B" if es_par else "#1E1E1E"
+            fg = "#FFFFFF"
+        else:
+            bg = "#EBEAEA" if es_par else "#FFFFFF"
+            fg = "#000000"
+
+        return bg, fg
+
+    # def obtener_color_sector(self, sector: str, es_par: bool = False) -> str:
+    #     """Devuelve el color HEX asignado a un sector (o blanco si no tiene)."""
+    #     if sector in self.mapa_colores_sectores:
+    #         color_impar, color_par = self.mapa_colores_sectores[sector]
+    #         # Retorna el color correspondiente según la paridad del índice del sector
+    #         return color_par if es_par else color_impar
+    #     #
+    #     return "#EBEAEA" if es_par else None # Color blanco por defecto si no tiene asignado
 
 #----------------------------------------------------------------------------------
 #-----Primer servicio de la app, encargado de la lógica de negocio y de la comunicación con el repositorio de datos.

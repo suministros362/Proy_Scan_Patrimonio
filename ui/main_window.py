@@ -79,8 +79,8 @@ class MainWindow(tb.Window):
         # Encabezados
         self.tabla.heading("nro", text="N°")
         self.tabla.heading("nro_inv", text="N° Inventario")
-        self.tabla.heading("nro_nuevo", text="N° Nuevo")
-        self.tabla.heading("elemento", text="Elemento")
+        self.tabla.heading("nro_nuevo", text="N° Nuevo", command=lambda: self.ordenar_tabla_por("nro_nuevo"))
+        self.tabla.heading("elemento", text="Elemento", command=lambda: self.ordenar_tabla_por("elemento"))
         self.tabla.heading("marca", text="Marca")
         self.tabla.heading("modelo", text="Modelo")
         self.tabla.heading("nro_serie", text="N° Serie")
@@ -149,13 +149,6 @@ class MainWindow(tb.Window):
         )
         btn_planilla2.pack(side="left", padx=10)
 
-        # btn_planilla3 = tb.Button(
-        #     frame_bottom,
-        #     text="Planilla 3",
-        #     bootstyle="warning-outline",
-        #     command=lambda: print("Generar Planilla 3")
-        # )
-        # btn_planilla3.pack(side="left", padx=10)
 
     def on_limpiar_sesion(self):
         """Pide confirmación y limpia la sesión actual y la tabla."""
@@ -246,7 +239,7 @@ class MainWindow(tb.Window):
         resultados = self.controller.service.escaneados_sesion  # Lista de productos escaneados en la sesión actual
 
         if not resultados:
-            messagebox.showwarning("Atención", "No hay elementos escaneados en la sesión actual.", title="Sin Datos", parent=self)
+            messagebox.showwarning("Sin datos", "No hay elementos escaneados en la sesión actual.", parent=self)
             self.entry_codigo.focus()
             return
 
@@ -280,54 +273,23 @@ class MainWindow(tb.Window):
                     parent=self
                 )
 
-        # if not ruta_salida:
-        #     self.entry_codigo.focus()
-        #     return
-
-        # # 3. Generar Excel
-        # exito = self.controller.generar_planilla_relevo(dialogo.datos, ruta_salida)
-
-        # if exito:
-        #     tb.dialogs.Messagebox.show_info(
-        #         f"Planilla generada con éxito en:\n{ruta_salida}",
-        #         title="Reporte Creado",
-        #         parent=self
-        #     )
-            #messagebox.showinfo("Éxito", f"Planilla generada correctamente en:\n{ruta_salida}")
-        # else:
-            # tb.dialogs.Messagebox.show_error(
-            #     "No se pudo generar la planilla. Asegúrate de tener la plantilla 'plantilla_relevo.xlsx' en la raíz del proyecto y que no esté en uso.",
-            #     title="Error de Generación",
-            #     parent=self
-            # )
-            # messagebox.showerror("Error", "No se pudo generar la planilla. Verifica que la plantilla no esté en uso.")
-
-    # def _generar_nombre_excel_predeterminado(self) -> str:
-    #     """Genera un nombre de archivo limpio basado en piso, oficina, área y la fecha actual."""
-    #     # 1. Obtener los valores (ajusta las variables según dónde tengas almacenados estos datos)
-    #     piso = getattr(self.controller.service, "piso", "").strip() or "Piso"
-    #     oficina = getattr(self.controller.service, "oficina", "").strip() or "Oficina"
-    #     area = getattr(self.controller.service, "area", "").strip() or "Area"
-
-    #     # 2. Obtener fecha actual en formato DD-MM-YYYY
-    #     fecha_str = datetime.now().strftime("%d-%m-%Y")
-
-    #     # 3. Limpiar caracteres no válidos para nombres de archivo en Windows/Linux (\ / : * ? " < > |)
-    #     piso_clean = re.sub(r'[\\/*?:"<>|]', '', piso).replace(' ', '_')
-    #     oficina_clean = re.sub(r'[\\/*?:"<>|]', '', oficina).replace(' ', '_')
-    #     area_clean = re.sub(r'[\\/*?:"<>|]', '', area).replace(' ', '_')
-
-    #     # 4. Retornar el nombre combinado con guiones bajos
-    #     return f"{piso_clean}_{oficina_clean}_{area_clean}_{fecha_str}.xlsx"
 
     def alternar_tema(self):
-        if "selected" in self.switch_tema.state():
+        """Alterna entre el tema claro y oscuro en tiempo real y refresca los colores."""
+        # Verificamos el tema actual en uso para saber a cuál cambiar
+        tema_actual = self.style.theme.name
+
+        if tema_actual == self.tema_claro:
             self.style.theme_use(self.tema_oscuro)
             self.switch_tema.config(text="Modo Claro")
         else:
             self.style.theme_use(self.tema_claro)
             self.switch_tema.config(text="Modo Oscuro")
+
+        # Forzamos a que la tabla recalcule los colores de los sectores con el nuevo tema
+        self.refrescar_tabla()
         self.entry_codigo.focus()
+
 
     def on_escanear(self, event=None):
         codigo = self.entry_codigo.get().strip()
@@ -371,33 +333,66 @@ class MainWindow(tb.Window):
                     # ))
         self.entry_codigo.focus()
 
+    def es_modo_oscuro(self) -> bool:
+        """Determina si el tema actual de ttkbootstrap es oscuro."""
+        # Se verifica si el nombre del tema contiene 'dark' o pertenece a los temas oscuros
+        theme_name = self.style.theme.name.lower()
+        temas_oscuros = ["one-dark", "superhero", "cyborg", "solar", "vapor"]
+        return any(t in theme_name for t in temas_oscuros)
+
     def refrescar_tabla(self):
         """Limpia y vuelve a cargar toda la tabla asignando el N° correlativo correcto."""
         for item in self.tabla.get_children():
             self.tabla.delete(item)
 
+        es_oscuro = self.es_modo_oscuro()
+
         for idx, p in enumerate(self.controller.service.escaneados_sesion, start=1):
-            sector_prod = getattr(p, "sector", "")  or "Sin Sector"# Obtener el sector del producto, si existe
-            es_par = (idx % 2 == 0)  # Determinar si el índice es par
+            sector_prod = getattr(p, "sector", "") or "Sin Sector"
+            es_par = (idx % 2 == 0)
 
-            # Nombre único de tag combinando el sector y la paridad para diferenciar colores
-            tag_name = f"tag_{hash(sector_prod)}_{'par' if es_par else 'impar'}"
+            # Registrar sector si aún no tiene un color mapeado
+            self.controller.service.asignar_color_a_sector(sector_prod)
 
-            #Obtener el color exacto desde el servicio
-            color_bg = self.controller.service.obtener_color_sector(sector_prod, es_par=es_par)
+            # Tag único basado en sector, paridad y modo oscuro
+            tag_name = f"tag_{hash(sector_prod)}_{'par' if es_par else 'impar'}_{'dark' if es_oscuro else 'light'}"
 
-            # Configurar el tag con el color de fondo correspondiente
-            self.tabla.tag_configure(tag_name, background=color_bg)
+            # Obtener la tupla (fondo, texto) correspondiente
+            color_bg, color_fg = self.controller.service.obtener_color_sector(
+                sector_prod, 
+                es_par=es_par, 
+                es_modo_oscuro=es_oscuro
+            )
 
-            # if sector_prod in self.controller.service.mapa_colores_sectores:
-            #     color_fondo = self.controller.service.mapa_colores_sectores[sector_prod]
-            #     self.tabla.tag_configure(tag_name, background=color_fondo)
-
+            # Configurar el tag aplicando AMBOS atributos: fondo y letra
+            self.tabla.tag_configure(tag_name, background=color_bg, foreground=color_fg)
 
             self.tabla.insert("", "end", values=(
                 idx, p.nro_inventario, p.nro_nuevo, p.elemento, 
                 p.marca, p.modelo, p.nro_serie, p.oficina, p.dependencia, p.observaciones, p.sector.upper()
             ), tags=(tag_name,))
+
+    def ordenar_tabla_por(self, col, reverse=False):
+        """Ordena los elementos de la tabla segun la columna seleccionada."""
+        # Obtener todos los items cargados en la tabla
+        items = [(self.tabla.set(k, col), k) for k in self.tabla.get_children('')]
+
+        # Si ordenamos por nro_nuevo, convertimos a entero para que ordene numericante
+        if col == "nro_nuevo":
+            def clave_orden(item):
+                val = item[0].strip()
+                return int(val) if val.isdigit() else float('inf')
+            items.sort(key=clave_orden, reverse=reverse)
+        else:
+            # Para elemento (y otros campos de texto), ordenar alfabeticamente ignorando mayusculas
+            items.sort(key=lambda x: x[0].lower(), reverse=reverse)
+
+        # Reorganizar los elementos visualmente en el Treeview
+        for index, (val, k) in enumerate(items):
+            self.tabla.move(k, '', index)
+
+        # Alternar la direccion del proximo clic en el encabezado
+        self.tabla.heading(col, command=lambda: self.ordenar_tabla_por(col, not reverse))
 
     def on_eliminar_registro(self):
         """Elimina la fila seleccionada y recalcula la numeración."""
@@ -443,110 +438,3 @@ class MainWindow(tb.Window):
 
             self.refrescar_tabla()  # Actualiza la tabla para reflejar el cambio de sector
         self.entry_codigo.focus()
-
-#-----------------------------------------------------------------------------------------
-#------------------Primera Version de la ventana principal con ttkbootstrap---------------
-#-----------------------------------------------------------------------------------------
-# import ttkbootstrap as tb
-# from tkinter import messagebox
-# from ui.dialogs import AgregarProductoDialog
-
-# class MainWindow(tb.Window):
-#     def __init__(self, controller):
-#         #Definimos los dos temas a alternar
-#         self.tema_claro = "flatly"    # Tema claro moderno
-#         self.tema_oscuro = "vapor-dark"   # Tema oscuro moderno
-#         super().__init__(
-#             title="Control Patrimonial",
-#             themename=self.tema_claro,
-#             size=(750, 750)
-#         )
-#         self.controller = controller # Inyectamos el controlador
-#         self.setup_ui()
-
-#     def setup_ui(self):
-#         # --- CABECERA Y CAMBIO DE TEMA ---
-#         frame_top = tb.Frame(self, padding=(20, 10))
-#         frame_top.pack(fill="x")
-
-#         # Interruptor (Switch) para alternar tema
-#         # Al hacer clic, ejecuta el método self.alternar_tema
-#         self.switch_tema = tb.Checkbutton(
-#             frame_top, 
-#             text="Modo Oscuro", 
-#             bootstyle="round-toggle", 
-#             command=self.alternar_tema,
-#             width=12
-#         )
-#         self.switch_tema.pack(side="right")
-#         # --- FRAME ESCANEO ---
-#         frame_scan = tb.LabelFrame(self, text=" Escaneo ", padding=15, bootstyle="primary")
-#         frame_scan.pack(fill="x", padx=20, pady=10)
-
-#         self.entry_codigo = tb.Entry(frame_scan, font=("Helvetica", 11), width=25)
-#         self.entry_codigo.pack(side="left", padx=10)
-#         self.entry_codigo.focus()
-#         self.entry_codigo.bind("<Return>", self.on_escanear)
-
-#         btn_scan = tb.Button(frame_scan, text="Procesar", command=self.on_escanear, bootstyle="primary")
-#         btn_scan.pack(side="left", padx=5)
-
-#         # --- TABLA DE ESCANEADOS ---
-#         frame_tabla = tb.LabelFrame(self, text=" Escaneados en la Sesión ", padding=15, bootstyle="info")
-#         frame_tabla.pack(fill="both", expand=True, padx=20, pady=10)
-
-#         self.tabla = tb.Treeview(frame_tabla, columns=("codigo", "nombre", "categoria"), show="headings", bootstyle="info")
-#         self.tabla.heading("codigo", text="Código")
-#         self.tabla.heading("nombre", text="Artículo")
-#         self.tabla.heading("categoria", text="Categoría")
-#         self.tabla.pack(fill="both", expand=True)
-
-#         # --- BOTÓN EXPORTAR ---
-#         btn_exportar = tb.Button(self, text="Generar Excel", command=self.on_exportar, bootstyle="success")
-#         btn_exportar.pack(side="right", padx=20, pady=10)
-
-#     def alternar_tema(self):
-#         """Método que cambia el tema de la ventana en tiempo real."""
-#         # Verificamos si el switch está activado
-#         if "selected" in self.switch_tema.state():
-#             # Cambiar a Modo Oscuro
-#             self.style.theme_use(self.tema_oscuro)
-#             toggle_text = "Modo Claro"
-#             self.switch_tema.config(text=toggle_text)
-#         else:
-#             # Cambiar a Modo Claro
-#             self.style.theme_use(self.tema_claro)
-#             toggle_text = "Modo Oscuro"
-#             self.switch_tema.config(text=toggle_text)
-#         self.entry_codigo.focus()
-
-#     def on_escanear(self, event=None):
-#         codigo = self.entry_codigo.get().strip()
-#         if not codigo:
-#             return
-
-#         self.entry_codigo.delete(0, 'end')
-
-#         # Se solicita la acción al controlador
-#         resultado = self.controller.procesar_codigo_escaneado(codigo)
-
-#         if resultado["encontrado"]:
-#             prod = resultado["producto"]
-#             self.tabla.insert("", "end", values=(prod.codigo, prod.nombre, prod.categoria))
-#         else:
-#             messagebox.showwarning("No Encontrado", f"El código {codigo} no existe. Procede al alta manual.")
-#             # 🚀 Abrir la ventana emergente pasándole el código que no existía
-#             dialogo = AgregarProductoDialog(self, codigo, self.controller)
-#             self.wait_window(dialogo) # Espera a que el usuario cierre la ventana emergente
-
-#             # Si el usuario guardó el producto, actualizamos la tabla principal
-#             if dialogo.producto_creado:
-#                 prod = dialogo.producto_creado
-#                 self.tabla.insert("", "end", values=(prod.codigo, prod.nombre, prod.categoria))
-
-#     def on_exportar(self):
-#         exito = self.controller.exportar_planilla("Reporte_Patrimonio.xlsx")
-#         if exito:
-#             messagebox.showinfo("Éxito", "Planilla exportada con éxito.")
-#         else:
-#             messagebox.showwarning("Atención", "No hay items para exportar.")

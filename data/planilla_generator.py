@@ -2,14 +2,41 @@ from datetime import datetime
 import openpyxl
 from openpyxl.styles import Alignment
 import os
+import sys
 
 import xlrd
 from xlutils.copy import copy
 
+def obtener_ruta_recurso(ruta_relativa: str) -> str:
+    """
+    Obtiene la ruta absoluta para acceder a archivos/carpetas internos,
+    compatible con PyInstaller y el entorno de desarrollo local.
+    """
+    if hasattr(sys, '_MEIPASS'):
+        # Ruta cuando la app corre empaquetada como .exe
+        return os.path.join(sys._MEIPASS, ruta_relativa)
+    # Ruta cuando corre en modo desarrollo / script normal
+    return os.path.join(os.path.abspath("."), ruta_relativa)
+
 class PlanillaGenerator:
-    def __init__(self, ruta_plantilla_relevo=os.path.join("plantillas", "plantilla_relevo.xlsx"), ruta_plantilla_busqueda=os.path.join("plantillas", "plantilla_busqueda.xls")):
-        self.ruta_plantilla_relevo = ruta_plantilla_relevo
-        self.ruta_plantilla_busqueda = ruta_plantilla_busqueda
+    def __init__(self, ruta_plantilla_relevo=None, ruta_plantilla_busqueda=None):
+        # 📌 Si no se pasan rutas personalizadas, se resuelven dinámicamente
+        if ruta_plantilla_relevo is None:
+            self.ruta_plantilla_relevo = obtener_ruta_recurso(
+                os.path.join("plantillas", "plantilla_relevo.xlsx")
+            )
+        else:
+            self.ruta_plantilla_relevo = ruta_plantilla_relevo
+
+        if ruta_plantilla_busqueda is None:
+            self.ruta_plantilla_busqueda = obtener_ruta_recurso(
+                os.path.join("plantillas", "plantilla_busqueda.xls")
+            )
+        else:
+            self.ruta_plantilla_busqueda = ruta_plantilla_busqueda
+    # def __init__(self, ruta_plantilla_relevo=os.path.join("plantillas", "plantilla_relevo.xlsx"), ruta_plantilla_busqueda=os.path.join("plantillas", "plantilla_busqueda.xls")):
+    #     self.ruta_plantilla_relevo = ruta_plantilla_relevo
+    #     self.ruta_plantilla_busqueda = ruta_plantilla_busqueda
 
     def generar_relevo(self, datos_encabezado: dict, productos: list, ruta_salida: str) -> bool:
         """Llena la plantilla de relevo con los datos del formulario y los productos de la sesión."""
@@ -26,6 +53,7 @@ class PlanillaGenerator:
             ws["C11"] = datos_encabezado.get("dependencia", "")
             ws["F8"] = datos_encabezado.get("responsable", "")
             ws["F9"] = datos_encabezado.get("subresponsable", "")
+            ws["F10"] = datos_encabezado.get("telefono", "")
 
             # Configuración de alineación con ajuste de texto
             alineacion_centrado = Alignment(horizontal="center", vertical="center", wrap_text=True)
