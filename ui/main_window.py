@@ -77,17 +77,17 @@ class MainWindow(tb.Window):
         self.tabla = tb.Treeview(frame_tabla, columns=columnas, show="headings", bootstyle="info")
         
         # Encabezados
-        self.tabla.heading("nro", text="N°")
+        self.tabla.heading("nro", text="N°", command=lambda: self.ordenar_tabla_por("nro"))
         self.tabla.heading("nro_inv", text="N° Inventario")
         self.tabla.heading("nro_nuevo", text="N° Nuevo", command=lambda: self.ordenar_tabla_por("nro_nuevo"))
         self.tabla.heading("elemento", text="Elemento", command=lambda: self.ordenar_tabla_por("elemento"))
-        self.tabla.heading("marca", text="Marca")
+        self.tabla.heading("marca", text="Marca", command=lambda: self.ordenar_tabla_por("marca"))
         self.tabla.heading("modelo", text="Modelo")
         self.tabla.heading("nro_serie", text="N° Serie")
-        self.tabla.heading("oficina", text="Oficina")
-        self.tabla.heading("dependencia", text="Dependencia")
+        self.tabla.heading("oficina", text="Oficina", command=lambda: self.ordenar_tabla_por("oficina"))
+        self.tabla.heading("dependencia", text="Dependencia", command=lambda: self.ordenar_tabla_por("dependencia"))
         self.tabla.heading("observaciones", text="Observaciones")
-        self.tabla.heading("sector", text="Sector")
+        self.tabla.heading("sector", text="Sector", command=lambda: self.ordenar_tabla_por("sector"))
         # Anchos de columna optimizados
         self.tabla.column("nro", width=50, anchor="center")
         self.tabla.column("nro_inv", width=100, anchor="center")
