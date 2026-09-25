@@ -305,12 +305,8 @@ class MainWindow(tb.Window):
                 p = resultado["producto"]
                 messagebox.showwarning("Producto Ya Escaneado", f"El artículo '{p.elemento}' ({codigo}) YA fue registrado en esta sesión.")
             else:
-                self.refrescar_tabla()    
-                # p = resultado["producto"]
-                # self.tabla.insert("", "end", values=(
-                # p.nro_inventario, p.nro_nuevo, p.elemento, 
-                # p.marca, p.modelo, p.nro_serie, p.oficina, p.dependencia
-            # ))
+                self.refrescar_tabla(ir_al_ultimo=True)    
+                
         else:
             # 1. Alerta de código no encontrado
             respuesta = messagebox.askyesno(
@@ -325,7 +321,7 @@ class MainWindow(tb.Window):
 
                 # 3. Si el usuario guardó el producto, lo insertamos en la tabla principal
                 if dialogo.producto_creado:
-                    self.refrescar_tabla()
+                    self.refrescar_tabla(ir_al_ultimo=True)
                     # p = dialogo.producto_creado
                     # self.tabla.insert("", "end", values=(
                     #     p.nro_inventario, p.nro_nuevo, p.elemento, 
@@ -340,7 +336,7 @@ class MainWindow(tb.Window):
         temas_oscuros = ["one-dark", "superhero", "cyborg", "solar", "vapor"]
         return any(t in theme_name for t in temas_oscuros)
 
-    def refrescar_tabla(self):
+    def refrescar_tabla(self, ir_al_ultimo=False):
         """Limpia y vuelve a cargar toda la tabla asignando el N° correlativo correcto."""
         for item in self.tabla.get_children():
             self.tabla.delete(item)
@@ -371,6 +367,28 @@ class MainWindow(tb.Window):
                 idx, p.nro_inventario, p.nro_nuevo, p.elemento, 
                 p.marca, p.modelo, p.nro_serie, p.oficina, p.dependencia, p.observaciones, p.sector.upper()
             ), tags=(tag_name,))
+
+            #scroll al ultimo item insertado
+        if ir_al_ultimo:
+            self.after_idle(self.ir_al_ultimo)
+    
+    
+    def ir_al_ultimo(self):
+        """Desplaza la tabla hasta el último registro."""
+
+        items = self.tabla.get_children()
+
+        if not items:
+            return
+
+        ultimo = items[-1]
+
+        # Llevar el Treeview hasta el final
+        self.tabla.see(ultimo)
+
+        # Seleccionar el último registro
+        self.tabla.selection_set(ultimo)
+        self.tabla.focus(ultimo)
 
     def ordenar_tabla_por(self, col, reverse=False):
         """Ordena los elementos de la tabla segun la columna seleccionada."""
