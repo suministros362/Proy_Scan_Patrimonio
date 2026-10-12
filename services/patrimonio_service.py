@@ -1,102 +1,262 @@
+"""Reglas de negocio, estado de sesión y auditoría patrimonial."""
+
+import logging
+import uuid
+
 from data.excel_repository import ExcelRepository
 from data.planilla_generator import PlanillaGenerator
 from models.producto import Producto
 
+logger = logging.getLogger(__name__)
+
+
 class PatrimonioService:
+    """Coordina inventario, sesión activa, validaciones y reportes.
+
+    Args:
+        None: Las dependencias se construyen usando la configuración central.
+
+    Returns:
+        Instancia de `PatrimonioService` con una sesión nueva activa.
+
+    Raises:
+        None: Los errores de lectura se gestionan en el repositorio.
+    """
+
     def __init__(self):
+        """Carga las dependencias y crea una sesión de trabajo.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+
+        Raises:
+            None: El repositorio gestiona errores de lectura inicial.
+        """
         self.repository = ExcelRepository()
         self.generator = PlanillaGenerator()
         self.inventario_general = self.repository.obtener_inventario()
         self.escaneados_sesion: list[Producto] = []
-        self.sector_actual = ""  # Nuevo atributo para almacenar el sector actual
+        self.sector_actual = ""
+        self.session_id = ""
+        self._session_active = False
+        self._scan_count = 0
+        self._manual_add_count = 0
+        self._iniciar_sesion()
 
-        # Paleta para MODO CLARO (colores pastel con variantes clara y ligeramente más oscura)
-        self.colores_modo_claro = [
-            ("#E6F3FF", "#D0E7FF"),  # Azul pastel
-            ("#E6FFE6", "#D1FFD1"),  # Verde pastel
-            ("#FFF0F5", "#FFE0EB"),  # Rosa pastel
-            ("#FFF2CC", "#FFE599"),  # Amarillo pastel
-            ("#E8DAEF", "#D7BDE2"),  # Violeta pastel
-            ("#E0F7FA", "#B2EBF2"),  # Cian pastel
-            ("#FFE0B2", "#FFCC80"),  # Naranja pastel
-        ]
+    def _registrar_auditoria(self, evento: str, **detalles) -> None:
+        """Escribe un evento de auditoría asociado a la sesión activa.
 
-        # Paleta para MODO OSCURO (colores profundos/saturados para no encandilar y permitir lectura blanca)
-        self.colores_modo_oscuro = [
-            ("#1A365D", "#2A4365"),  # Azul oscuro
-            ("#1C4532", "#22543D"),  # Verde oscuro
-            ("#4A154B", "#611F69"),  # Violeta oscuro
-            ("#5B3A00", "#744A00"),  # Café/Amarillo oscuro
-            ("#4C1D95", "#5B21B6"),  # Púrpura oscuro
-            ("#083344", "#164E63"),  # Cian oscuro
-            ("#6C2BD9", "#7C3AED"),  # Naranja/Marrón oscuro
-        ]
+        Args:
+            evento: Nombre estable del tipo de acción registrada.
+            **detalles: Contadores y estado no identificable del evento.
 
-        # Guardamos ambas listas en el mapa de colores
-        self.mapa_colores_sectores = {}
+        Returns:
+            None.
 
-        # self.colores_disponibles = [
-        #     ("#E6F3FF", "#D0E7FF"),  # Azul pastel
-        #     ("#E6FFE6", "#D1FFD1"),  # Verde pastel
-        #     ("#FFF0F5", "#FFE0EB"),  # Rosa pastel
-        #     ("#FFF2CC", "#FFE599"),  # Amarillo pastel
-        #     ("#E8DAEF", "#D7BDE2"),  # Violeta pastel
-        #     ("#E0F7FA", "#B2EBF2"),  # Cian pastel
-        #     ("#FFE0B2", "#FFCC80"),  # Naranja pastel
-        # ]
-        # self.mapa_colores_sectores = {}  # Diccionario para mapear sectores a colores
+        Raises:
+            None.
+        """
+        logger.info(
+            "AUDIT event=%s session_id=%s details=%s",
+            evento,
+            self.session_id,
+            detalles,
+        )
 
-    def buscar_producto_por_codigo(self, codigo_escaneado: str) -> Producto | None:
+    def _iniciar_sesion(self) -> None:
+        """Crea un identificador y reinicia los contadores de auditoría.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+
+        Raises:
+            None.
+        """
+        self.session_id = uuid.uuid4().hex
+        self._session_active = True
+        self._scan_count = 0
+        self._manual_add_count = 0
+        self._registrar_auditoria("session_started", scan_count=0)
+
+    def finalizar_sesion(self) -> None:
+        """Registra el resumen de la sesión actual una sola vez.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+
+        Raises:
+            None.
+        """
+        if not self._session_active:
+            return
+        self._registrar_auditoria(
+            "session_ended",
+            scan_count=self._scan_count,
+            manual_add_count=self._manual_add_count,
+        )
+        self._session_active = False
+
+    def buscar_producto_por_codigo(
+            self, codigo_escaneado: str) -> Producto | None:
+        """Busca un producto por inventario, código nuevo o número de serie.
+
+        Args:
+            codigo_escaneado: Identificador introducido por el usuario.
+
+        Returns:
+            Producto coincidente o `None` si no existe.
+
+        Raises:
+            None.
+        """
         codigo_limpio = str(codigo_escaneado).strip()
-        
+
+        if not codigo_limpio:
+            logger.warning("Se intentó buscar un producto con código vacío.")
+            return None
+
         for prod in self.inventario_general:
             # Revisa si coincide con el Nro. Nuevo, de Inventario O de Serie
-            if (codigo_limpio == prod.nro_nuevo or 
-                codigo_limpio == prod.nro_inventario or 
-                codigo_limpio == prod.nro_serie):
+            if (
+                codigo_limpio == prod.nro_nuevo
+                or codigo_limpio == prod.nro_inventario
+                or codigo_limpio == prod.nro_serie
+            ):
+                logger.info("Producto encontrado en el inventario.")
                 return prod
-                
+
+        logger.warning("No se encontró producto en el inventario.")
         return None
 
     def es_duplicado_en_sesion(self, producto: Producto) -> bool:
-        """Verifica si el producto ya fue escaneado en la sesión actual por sus identificadores."""
+        """Comprueba si coincide algún identificador no vacío de la sesión.
+
+        Args:
+            producto: Producto que se desea comparar con los ya registrados.
+
+        Returns:
+            `True` si coincide un identificador; de lo contrario, `False`.
+
+        Raises:
+            None.
+        """
         for p in self.escaneados_sesion:
-            # Comprueba si coinciden los identificadores (ignorando campos vacíos)
+            # Comprueba si coinciden los identificadores (ignorando campos
+            # vacíos)
             if p.nro_nuevo and p.nro_nuevo == producto.nro_nuevo:
                 return True
-            if p.nro_inventario and p.nro_inventario == producto.nro_inventario:
+            if (
+                p.nro_inventario
+                and p.nro_inventario == producto.nro_inventario
+            ):
                 return True
             if p.nro_serie and p.nro_serie == producto.nro_serie:
                 return True
         return False
 
     def procesar_codigo(self, codigo_escaneado: str):
+        """Busca un código y registra el producto si no es duplicado.
+
+        Args:
+            codigo_escaneado: Código recibido del lector o campo de escaneo.
+
+        Returns:
+            Diccionario con `encontrado`, `razon` y el `producto` asociado.
+
+        Raises:
+            None.
+        """
+        logger.info("Procesando código escaneado.")
         prod = self.buscar_producto_por_codigo(codigo_escaneado)
-        
+
         if not prod:
-            return {"encontrado": False, "razon": "no_existe", "producto": None}
-            
+            logger.warning("Código no encontrado en inventario.")
+            self._registrar_auditoria(
+                "scan_not_found", scan_count=self._scan_count)
+            return {
+                "encontrado": False,
+                "razon": "no_existe",
+                "producto": None}
+
         # Verificar si ya se escaneó en esta sesión
         if self.es_duplicado_en_sesion(prod):
+            logger.warning("Código duplicado detectado en sesión.")
+            self._registrar_auditoria(
+                "scan_duplicate", scan_count=self._scan_count)
             return {"encontrado": True, "razon": "duplicado", "producto": prod}
-            
+
         # Si no es duplicado, lo agregamos a la sesión
         self.registrar_escaneo(prod)
+        logger.info("Escaneo registrado correctamente en la sesión.")
         return {"encontrado": True, "razon": "ok", "producto": prod}
 
+    def procsar_codigo(self, codigo_escaneado: str):
+        """Delega en `procesar_codigo` para mantener compatibilidad anterior.
+
+        Args:
+            codigo_escaneado: Código que se procesará.
+
+        Returns:
+            El mismo resultado que `procesar_codigo`.
+
+        Raises:
+            None.
+        """
+        logger.warning(
+            "Se usó un alias de compatibilidad con typo en el "
+            "método del servicio."
+        )
+        return self.procesar_codigo(codigo_escaneado)
+
     def registrar_escaneo(self, producto: Producto):
-        """Agrega el producto al historial de la sesión."""
+        """Añade un producto a la sesión y actualiza su sector y contador.
+
+        Args:
+            producto: Producto encontrado en el inventario.
+
+        Returns:
+            None.
+
+        Raises:
+            None.
+        """
         self.escaneados_sesion.append(producto)
-        producto.sector = self.sector_actual  # Asignar el sector actual al producto escaneado
+        # Asignar el sector actual al producto escaneado
+        producto.sector = self.sector_actual
+        # Count only accepted inventory scans; duplicates and unknown codes are
+        # excluded.
+        self._scan_count += 1
+        self._registrar_auditoria(
+            "scan_registered",
+            scan_count=self._scan_count)
 
     def crear_y_registrar_producto(self, datos: dict) -> Producto:
-        """Crea un nuevo objeto Producto y lo agrega EXCLUSIVAMENTE a la lista de la sesión activa. NO toca el inventrio maestro ni el Excel."""
+        """Valida, crea y agrega un producto manual a la sesión activa.
 
-        sector_ingresado = datos.get("sector", "").strip() or self.sector_actual
+        Args:
+            datos: Campos del producto con claves internas del modelo.
 
-        if sector_ingresado:
-            # self.cambiar_sector_actual(sector_ingresado)  # Actualiza el sector actual y asigna color si es nuevo
-            self.asignar_color_a_sector(sector_ingresado)  # Asigna color al sector si es nuevo
+        Returns:
+            Producto recién creado y agregado a la sesión.
+
+        Raises:
+            ValueError: Si falta la descripción obligatoria del elemento.
+        """
+        error_validacion = self.validar_producto_manual(datos)
+        if error_validacion:
+            raise ValueError(error_validacion)
+
+        sector_ingresado = str(
+            datos.get("sector") or "").strip() or self.sector_actual
 
         nuevo_prod = Producto(
             nro_inventario=datos.get("nro_inventario", ""),
@@ -111,150 +271,263 @@ class PatrimonioService:
             sector=sector_ingresado
         )
 
-   
         self.escaneados_sesion.append(nuevo_prod)
-        
+        self._manual_add_count += 1
+        self._registrar_auditoria(
+            "manual_product_added",
+            manual_add_count=self._manual_add_count,
+            session_item_count=len(self.escaneados_sesion),
+        )
         return nuevo_prod
 
+    def validar_producto_manual(self, datos: dict) -> str | None:
+        """Valida los campos requeridos para un alta manual.
+
+        Args:
+            datos: Valores capturados en el formulario de alta.
+
+        Returns:
+            Mensaje de error o `None` cuando los datos son válidos.
+
+        Raises:
+            None.
+        """
+        if not str(datos.get("elemento") or "").strip():
+            return "El campo 'Elemento' es obligatorio."
+        return None
+
+    def obtener_productos_sesion(self) -> list[Producto]:
+        """Devuelve una copia superficial de los productos de la sesión.
+
+        Args:
+            None.
+
+        Returns:
+            Lista nueva que contiene los productos registrados.
+
+        Raises:
+            None.
+        """
+        return list(self.escaneados_sesion)
+
+    def obtener_producto_sesion(self, indice: int) -> Producto | None:
+        """Obtiene un producto por su posición actual en la sesión.
+
+        Args:
+            indice: Índice base cero del producto.
+
+        Returns:
+            Producto en esa posición o `None` si el índice no es válido.
+
+        Raises:
+            None.
+        """
+        if 0 <= indice < len(self.escaneados_sesion):
+            return self.escaneados_sesion[indice]
+        return None
+
+    def hay_productos_en_sesion(self) -> bool:
+        """Indica si existe al menos un producto en la sesión activa.
+
+        Args:
+            None.
+
+        Returns:
+            `True` si la sesión contiene productos; si no, `False`.
+
+        Raises:
+            None.
+        """
+        return bool(self.escaneados_sesion)
+
+    def actualizar_inventario(self, ruta_nuevo_archivo: str) -> int:
+        """Reemplaza el maestro y recarga el inventario en memoria.
+
+        Args:
+            ruta_nuevo_archivo: Ruta del libro `.xlsx` que se va a instalar.
+
+        Returns:
+            Cantidad de productos cargados desde el nuevo inventario.
+
+        Raises:
+            ValueError: Si la ruta, formato o esquema son inválidos.
+            OSError: Si el repositorio no puede completar el reemplazo seguro.
+        """
+        try:
+            productos = self.repository.actualizar_inventario(
+                ruta_nuevo_archivo)
+        except Exception as exc:
+            logger.exception("Falló la actualización del inventario maestro.")
+            self._registrar_auditoria(
+                "inventory_updated",
+                success=False,
+                error_type=type(exc).__name__,
+            )
+            raise
+
+        # Publish the new in-memory list only after the repository replaces the
+        # file.
+        self.inventario_general = productos
+        self._registrar_auditoria(
+            "inventory_updated",
+            success=True,
+            inventory_count=len(productos),
+        )
+        return len(productos)
+
     def exportar_planilla_diaria(self, ruta_archivo: str) -> bool:
+        """Exporta los elementos de la sesión a un libro Excel diario.
+
+        Args:
+            ruta_archivo: Destino del archivo que generará el repositorio.
+
+        Returns:
+            `True` si exportó; `False` si no hay datos o falla el guardado.
+
+        Raises:
+            None: El repositorio devuelve los fallos como resultado booleano.
+        """
         if not self.escaneados_sesion:
+            self._registrar_auditoria(
+                "report_generated",
+                report_type="daily_export",
+                success=False,
+                item_count=0)
             return False
-        self.repository.exportar_escaneos(self.escaneados_sesion, ruta_archivo)
-        return True
+        success = self.repository.exportar_escaneos(
+            self.escaneados_sesion, ruta_archivo)
+        self._registrar_auditoria(
+            "report_generated",
+            report_type="daily_export",
+            success=success,
+            item_count=len(self.escaneados_sesion),
+        )
+        return success
 
     def limpiar_sesion(self):
-        """Limpia la lista de productos escaneados en la sesión actual."""
-        self.escaneados_sesion.clear()
-        self.sector_actual = ""  # También resetea el sector actual
-        self.mapa_colores_sectores.clear()  # Limpiar el mapa de colores de sectores
+        """Finaliza y reinicia la sesión sin modificar el inventario maestro.
 
-    def generar_planilla_relevo(self, datos_encabezado: dict, ruta_salida: str) -> bool:
-        """Genera la planilla de relevo con los productos escaneados en la sesión."""
+        Args:
+            None.
+
+        Returns:
+            None.
+
+        Raises:
+            None.
+        """
+        self.finalizar_sesion()
+        self.escaneados_sesion.clear()
+        self.sector_actual = ""
+        self._iniciar_sesion()
+
+    def generar_planilla_relevo(
+            self,
+            datos_encabezado: dict,
+            ruta_salida: str) -> bool:
+        """Genera la planilla de relevo para los productos de la sesión.
+
+        Args:
+            datos_encabezado: Datos del área y responsables para el reporte.
+            ruta_salida: Ruta destino elegida por el usuario.
+
+        Returns:
+            `True` si se generó; `False` si no hay datos o falla el generador.
+
+        Raises:
+            None: Los errores del generador se devuelven como `False`.
+        """
         if not self.escaneados_sesion:
+            self._registrar_auditoria(
+                "report_generated",
+                report_type="relevo",
+                success=False,
+                item_count=0)
             return False
-        return self.generator.generar_relevo(datos_encabezado=datos_encabezado, productos=self.escaneados_sesion, ruta_salida=ruta_salida)
+        success = self.generator.generar_relevo(
+            datos_encabezado=datos_encabezado,
+            productos=self.escaneados_sesion,
+            ruta_salida=ruta_salida,
+        )
+        self._registrar_auditoria(
+            "report_generated",
+            report_type="relevo",
+            success=success,
+            item_count=len(self.escaneados_sesion),
+        )
+        return success
 
     def busqueda_masiva(self, resultados: list, ruta_salida: str) -> bool:
-        """Genera la planilla de búsqueda masiva con los resultados proporcionados."""
+        """Genera una planilla de búsqueda masiva a partir de resultados.
+
+        Args:
+            resultados: Productos que se incluirán en la búsqueda.
+            ruta_salida: Ruta destino elegida por el usuario.
+
+        Returns:
+            `True` si se generó; `False` si no hay resultados o falla.
+
+        Raises:
+            None: Los errores del generador se devuelven como `False`.
+        """
         if not resultados:
+            self._registrar_auditoria(
+                "report_generated",
+                report_type="search",
+                success=False,
+                item_count=0)
             return False
-        return self.generator.generar_busqueda(resultados=resultados, ruta_salida=ruta_salida)
+        success = self.generator.generar_busqueda(
+            resultados=resultados, ruta_salida=ruta_salida)
+        self._registrar_auditoria(
+            "report_generated",
+            report_type="search",
+            success=success,
+            item_count=len(resultados),
+        )
+        return success
+
+    def generar_planilla_busqueda(self, ruta_salida: str) -> bool:
+        """Genera la búsqueda masiva usando los productos de la sesión activa.
+
+        Args:
+            ruta_salida: Ruta destino elegida por el usuario.
+
+        Returns:
+            Resultado booleano de la generación del reporte.
+
+        Raises:
+            None: Los fallos del generador se representan con `False`.
+        """
+        return self.busqueda_masiva(self.escaneados_sesion, ruta_salida)
 
     def eliminar_producto_por_indice(self, indice: int) -> bool:
-        """Elimina un producto de la sesión por su índice en la lista."""
+        """Elimina un producto de la sesión por su índice base cero.
+
+        Args:
+            indice: Posición del producto en la lista de sesión.
+
+        Returns:
+            `True` si se eliminó; `False` si el índice no es válido.
+
+        Raises:
+            None.
+        """
         if 0 <= indice < len(self.escaneados_sesion):
             self.escaneados_sesion.pop(indice)
             return True
         return False
 
     def cambiar_sector_actual(self, nuevo_sector: str):
-        """Actualizar el sector activo y le asigna un color único si es nuevo."""
+        """Establece el sector que se asignará a los próximos escaneos.
+
+        Args:
+            nuevo_sector: Nombre del sector, recortado de espacios periféricos.
+
+        Returns:
+            None.
+
+        Raises:
+            None.
+        """
         self.sector_actual = nuevo_sector.strip()
-
-        if self.sector_actual and self.sector_actual not in self.mapa_colores_sectores:
-            # Asignamos el siguiente índice de color rotando en la lista
-            idx_color = len(self.mapa_colores_sectores) % len(self.colores_modo_claro)
-            
-            # 🔴 Antes: self.mapa_colores_sectores[sector] = idx_color
-            # 🟢 Ahora: guardamos la posición con self.sector_actual
-            self.mapa_colores_sectores[self.sector_actual] = idx_color
-    # def cambiar_sector_actual(self, nuevo_sector: str):
-    #     """Actualizar el sector activo y le asigna un color unico si es nuevo."""
-    #     self.sector_actual = nuevo_sector.strip()
-
-    #     if self.sector_actual and self.sector_actual not in self.mapa_colores_sectores:
-    #         #Asignamos el siguiente color disponible o rotamos en la lista
-    #         idx_color = len(self.mapa_colores_sectores) % len(self.colores_modo_claro)
-    #         self.mapa_colores_sectores[sector] = idx_color
-
-
-    def asignar_color_a_sector(self, sector: str):
-        """Asigna un índice de color a un sector si no lo tiene aún."""
-        if sector not in self.mapa_colores_sectores:
-            idx = len(self.mapa_colores_sectores) % len(self.colores_modo_claro)
-            self.mapa_colores_sectores[sector] = idx
-
-    def obtener_color_sector(self, sector: str, es_par: bool = False, es_modo_oscuro: bool = False) -> tuple[str, str]:
-        """
-        Devuelve una tupla (color_fondo, color_texto) asignada al sector.
-        Garantiza contraste óptimo según la paridad y el modo (claro/oscuro).
-        """
-        if sector in self.mapa_colores_sectores:
-            idx = self.mapa_colores_sectores[sector]
-            
-            if es_modo_oscuro:
-                colores = self.colores_modo_oscuro[idx % len(self.colores_modo_oscuro)]
-                bg = colores[1] if es_par else colores[0]
-                fg = "#FFFFFF"  # Texto blanco siempre en modo oscuro
-            else:
-                colores = self.colores_modo_claro[idx % len(self.colores_modo_claro)]
-                bg = colores[1] if es_par else colores[0]
-                fg = "#1F2937"  # Texto oscuro en modo claro
-
-            return bg, fg
-
-        # Colores por defecto si el sector no tiene color asignado
-        if es_modo_oscuro:
-            bg = "#2B2B2B" if es_par else "#1E1E1E"
-            fg = "#FFFFFF"
-        else:
-            bg = "#EBEAEA" if es_par else "#FFFFFF"
-            fg = "#000000"
-
-        return bg, fg
-
-    # def obtener_color_sector(self, sector: str, es_par: bool = False) -> str:
-    #     """Devuelve el color HEX asignado a un sector (o blanco si no tiene)."""
-    #     if sector in self.mapa_colores_sectores:
-    #         color_impar, color_par = self.mapa_colores_sectores[sector]
-    #         # Retorna el color correspondiente según la paridad del índice del sector
-    #         return color_par if es_par else color_impar
-    #     #
-    #     return "#EBEAEA" if es_par else None # Color blanco por defecto si no tiene asignado
-
-#----------------------------------------------------------------------------------
-#-----Primer servicio de la app, encargado de la lógica de negocio y de la comunicación con el repositorio de datos.
-#----------------------------------------------------------------------------------
-# from data.excel_repository import ExcelRepository
-# from models.producto import Producto
-
-# class PatrimonioService:
-#     def __init__(self):
-#         self.repository = ExcelRepository()
-#         self.inventario_general = self.repository.obtener_inventario()
-#         self.escaneados_sesion: list[Producto] = []
-
-#     def buscar_producto_por_codigo(self, codigo_escaneado: str) -> Producto | None:
-#         codigo_limpio = str(codigo_escaneado).strip()
-        
-#         for prod in self.inventario_general:
-#             # Revisa si coincide con el Nro. Nuevo, de Inventario O de Serie
-#             if (codigo_limpio == prod.nro_nuevo or 
-#                 codigo_limpio == prod.nro_inventario or 
-#                 codigo_limpio == prod.nro_serie):
-#                 return prod
-                
-#         return None
-
-#     def registrar_escaneo(self, producto: Producto):
-#         """Agrega el producto al historial de la sesión."""
-#         self.escaneados_sesion.append(producto)
-
-#     def crear_y_registrar_producto(self, codigo: str, nombre: str, categoria: str) -> Producto:
-#         """Crea un producto no existente, lo guarda en el Excel maestro y en la sesión."""
-#         nuevo_prod = Producto(codigo, nombre, categoria)
-        
-#         # 1. Guardar en disco (Excel Maestro)
-#         self.repository.guardar_nuevo_producto(nuevo_prod)
-        
-#         # 2. Agregar a la memoria local de la app
-#         self.inventario_general.append(nuevo_prod)
-#         self.escaneados_sesion.append(nuevo_prod)
-        
-#         return nuevo_prod
-
-#     def exportar_planilla_diaria(self, ruta_archivo: str) -> bool:
-#         if not self.escaneados_sesion:
-#             return False
-#         self.repository.exportar_escaneos(self.escaneados_sesion, ruta_archivo)
-#         return True

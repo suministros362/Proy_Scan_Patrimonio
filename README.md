@@ -123,8 +123,11 @@ flowchart TD
     A[Usuario] --> B[Interfaz Tkinter\nui/main_window.py]
     B --> C[Controlador\ncontrollers/patrimonio_controller.py]
     C --> D[Servicio de negocio\nservices/patrimonio_service.py]
+    B --> P[Presentación\nui/presentation.py]
     D --> E[Repositorio Excel\ndata/excel_repository.py]
     D --> F[Generador de planillas\ndata/planilla_generator.py]
+    S[Configuración\nconfig/settings.py] --> E
+    S --> F
     E --> G[(archivos/inventario.xlsx)]
     F --> H[plantillas/plantilla_relevo.xlsx]
     F --> I[plantillas/plantilla_busqueda.xls]
@@ -133,13 +136,14 @@ flowchart TD
 ### Capa de presentación
 
 - `ui/main_window.py`: ventana principal, Treeview, botones, eventos de escaneo, generación de reportes, cambio de tema.
+- `ui/presentation.py`: colores y estilos de filas por sector y tema.
 - `ui/dialogs.py`: formulario para alta manual de producto.
 - `ui/planillas_dialogs.py`: formulario para completar datos de relevamiento.
 - `ui/observacion_dialogs.py`: ventana para editar observaciones.
 
 ### Lógica de negocio
 
-- `services/patrimonio_service.py`: validación de códigos, búsqueda de productos, manejo de sesión escaneada, sector actual, generación de reportes y organización visual por color.
+- `services/patrimonio_service.py`: reglas de negocio, validaciones, sesión y auditoría de operaciones.
 
 ### Acceso a datos
 
@@ -154,7 +158,7 @@ flowchart TD
 
 ### Servicios/utilidades
 
-- `obtener_ruta_recurso(...)`: resuelve rutas reales para ejecutables generados con PyInstaller y para entorno de desarrollo.
+- `config/settings.py`: define rutas de recursos, nombres de archivos, esquema del inventario y carpeta predeterminada de salida.
 - `PlanillaGenerator`: centraliza la lógica de llenado de plantillas en Excel.
 
 ### Controladores
@@ -175,14 +179,18 @@ flowchart TD
 Relevo_Patrimonio/
 ├── app.py
 ├── requirements.txt
+├── requirements-dev.txt
 ├── Relevo_Patrimonio.spec
 ├── .gitignore
+├── LICENSE
+├── .github/workflows/python-tests.yml
 ├── archivos/
-│   └── inventario.xlsx
+│   └── inventario.xlsx (local, no versionado)
 ├── assets/
 │   └── icono.ico
-├── build/
-│   └── Relevo_Patrimonio/
+├── config/
+│   ├── __init__.py
+│   └── settings.py
 ├── controllers/
 │   ├── __init__.py
 │   └── patrimonio_controller.py
@@ -190,7 +198,6 @@ Relevo_Patrimonio/
 │   ├── __init__.py
 │   ├── excel_repository.py
 │   └── planilla_generator.py
-├── dist/
 ├── models/
 │   ├── __init__.py
 │   └── producto.py
@@ -200,20 +207,28 @@ Relevo_Patrimonio/
 ├── services/
 │   ├── __init__.py
 │   └── patrimonio_service.py
+├── tests/
+│   ├── test_excel_repository.py
+│   ├── test_patrimonio_service.py
+│   ├── test_planilla_generator.py
+│   └── test_settings.py
 ├── ui/
 │   ├── __init__.py
 │   ├── dialogs.py
 │   ├── main_window.py
 │   ├── observacion_dialogs.py
-│   └── planillas_dialogs.py
-└── .venv/
+│   ├── planillas_dialogs.py
+│   └── presentation.py
+└── README.md
 ```
 
 ### Responsabilidad de cada carpeta y archivo importante
 
 - `app.py`: punto de entrada de la aplicación; inicializa controlador y ventana principal.
 - `controllers/patrimonio_controller.py`: orquesta las acciones entre UI y servicio.
-- `services/patrimonio_service.py`: lógica principal del negocio: búsqueda, duplicados, sesión, colores, exportación y generación.
+- `services/patrimonio_service.py`: lógica de negocio, sesión y registro de auditoría.
+- `config/settings.py`: rutas, nombres de recursos, esquema Excel y carpeta de salida.
+- `ui/presentation.py`: presentación visual de filas por sector y tema.
 - `models/producto.py`: modelo de datos del producto/patrimonio.
 - `data/excel_repository.py`: acceso a Excel como repositorio de inventario y exportación de escaneos.
 - `data/planilla_generator.py`: rellena plantillas predefinidas con los datos del relevamiento y la búsqueda masiva.
@@ -242,14 +257,16 @@ Al ejecutar `python app.py`, el programa crea una instancia de `PatrimonioContro
 Durante la construcción del servicio:
 
 - se carga `ExcelRepository`
-- se lee la base de inventario desde `archivos/inventario.xlsx`
+- se valida y lee el inventario configurado en `config/settings.py`
 - se inicializa una lista `escaneados_sesion`
 - se inicializa `sector_actual`
-- se preparan paletas de color para diferenciar sectores visualmente
+- se asigna un identificador de sesión para los eventos de auditoría
+
+La paleta y los estilos de fila se resuelven en `ui/presentation.py`, no en la lógica de negocio.
 
 ### 3. Carga de configuración
 
-No se observa un archivo `.env`, `.ini`, ni configuración externa. La aplicación resuelve rutas según si corre en desarrollo o como ejecutable empaquetado por PyInstaller.
+Las rutas y nombres de recursos se centralizan en `config/settings.py`, que contempla el entorno de desarrollo y el empaquetado de PyInstaller.
 
 ### 4. Conexión con la base de datos
 
@@ -379,7 +396,8 @@ No existe una base de datos relacional ni archivos SQL. La capa de persistencia 
 
 - Ruta: `archivos/inventario.xlsx`
 - Contenido: listado de bienes patrimoniales leídos por `ExcelRepository.obtener_inventario()`.
-- Estructura esperada según el código:
+- Formato: libro Excel `.xlsx`; el orden de las columnas no es significativo y se recortan espacios en los encabezados.
+- Columnas obligatorias:
   - `NRO_INVENTARIO`
   - `NRO_NUEVO`
   - `ELEMENTO`
@@ -388,8 +406,8 @@ No existe una base de datos relacional ni archivos SQL. La capa de persistencia 
   - `NRO_SERIE`
   - `OFICINA`
   - `DEPENDENCIA`
-  - `OBSERVACIONES`
-  - `SECTOR`
+- `OBSERVACIONES` y `SECTOR` son columnas adicionales opcionales; no forman parte de la validación mínima de lectura.
+- Los identificadores se leen como texto para conservar ceros a la izquierda.
 
 ### Relaciones
 
@@ -406,14 +424,12 @@ erDiagram
         string NRO_SERIE
         string OFICINA
         string DEPENDENCIA
-        string OBSERVACIONES
-        string SECTOR
     }
 ```
 
 ### Cómo se inicializa
 
-La aplicación no crea una base ni corre migraciones. Simplemente intenta leer el Excel del inventario; si no existe, imprime una advertencia y devuelve una lista vacía.
+La aplicación no crea una base ni corre migraciones. Si el inventario falta o no cumple el esquema, registra un diagnóstico y devuelve una lista vacía. Al guardar, puede crear un archivo nuevo con el esquema configurado; un archivo existente con columnas faltantes o corrupto se rechaza sin sobrescribirlo.
 
 ---
 
@@ -491,9 +507,9 @@ La aplicación implementa validaciones y manejo de errores en varios puntos:
 - Manejo de errores de archivo: `ExcelRepository.guardar_nuevo_producto` recoge `PermissionError` y muestra un mensaje si el archivo está bloqueado por Excel.
 - Manejo de errores inesperados: se muestran mensajes con `messagebox.showerror`.
 - Validación de planillas: si no hay elementos en la sesión, se muestra una advertencia antes de generar la planilla.
-- Verificación de rutas: `obtener_ruta_recurso` intenta resolver archivos en modo desarrollo y empaquetado.
+- Verificación de rutas y columnas: `config/settings.py` centraliza los recursos y `ExcelRepository.validar_esquema()` valida el archivo antes de leer o escribir.
 
-No se observan mecanismos explícitos de logging estructurado ni trazas avanzadas, aunque el código imprime errores por consola en `PlanillaGenerator` cuando falla la exportación.
+La aplicación mantiene un log local en `Documents/Relevo Patrimonio/relevo_patrimonio.log`. Registra inicio y cierre de sesiones, escaneos aceptados, altas manuales y resultados de reportes; no guarda los códigos escaneados en estos eventos de auditoría.
 
 ---
 
@@ -522,62 +538,97 @@ No se detectan:
 
 ---
 
-## 13. Instalación
+## 13. Ejecución rápida para Usuarios Finales (.exe)
+
+Esta opción es para equipos Windows que solo necesitan ejecutar la aplicación.
+No hace falta instalar Python, `pip` ni las dependencias del proyecto.
+
+1. Descarga `Relevo_Patrimonio_v1.exe` desde las [Releases de GitHub](https://github.com/suministros362/Proy_Scan_Patrimonio/releases). Si tienes una copia del proyecto, también puedes usar `dist/Relevo_Patrimonio_v1.exe`.
+2. Guarda el ejecutable en una carpeta local y ábrelo con doble clic. El paquete ya incluye el archivo maestro de inventario y las plantillas; la aplicación queda lista para usar sin una carga inicial.
+3. Define un sector y comienza a escanear con el inventario incluido.
+4. Para actualizar el inventario, pulsa **Subir listado** y selecciona un archivo `.xlsx` que cumpla las columnas obligatorias descritas en [Contrato del Excel maestro](#8-base-de-datos). La aplicación valida el esquema, reemplaza el maestro y confirma cuántos bienes cargó.
+
+Requisitos mínimos: Windows y permiso para ejecutar el archivo. No es necesario instalar Python ni cargar un inventario para el primer uso; **Subir listado** permite reemplazar el maestro incluido cuando se disponga de una versión actualizada.
+
+---
+
+## 14. Instalación y Ejecución para Desarrolladores (Código Fuente)
 
 ### Requisitos previos
 
-- Python 3.10+ (el proyecto se ejecuta correctamente en un entorno con Python 3.14.2 en el workspace actual).
-- `pip`
-- Entorno virtual recomendado.
+- Windows 64-bit.
+- Python 3.11 o superior y `pip`.
+- Git.
 
-### Clonar o descargar el proyecto
+### Clonar el repositorio
 
-```bash
-git clone <url-del-repositorio>
-cd Relevo_Patrimonio
+En CMD, ejecuta:
+
+```bat
+git clone https://github.com/suministros362/Proy_Scan_Patrimonio.git relevo-patrimonio
+cd relevo-patrimonio
 ```
 
-### Crear entorno virtual
+### Crear y activar el entorno virtual
 
-#### Windows
+En CMD:
+
+```bat
+python -m venv venv
+venv\Scripts\activate
+```
+
+En PowerShell, usa el activador correspondiente:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-#### Linux/macOS
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m venv venv
+.\venv\Scripts\Activate.ps1
 ```
 
 ### Instalar dependencias
 
-```bash
-pip install -r requirements.txt
+```bat
+pip install -r requirements-dev.txt
 ```
 
----
+### Ejecutar la aplicación
 
-## 14. Ejecución
-
-La ejecución principal del proyecto es:
-
-```bash
+```bat
 python app.py
 ```
 
-También puede ejecutarse el archivo empaquetado generado por PyInstaller a partir de `Relevo_Patrimonio.spec`, si ya se ha construido el ejecutable.
+### Ejecutar pruebas y lint
+
+Desde la raíz del repositorio:
+
+```bat
+pytest
+flake8 .
+```
+
+### Consultar docstrings como HTML con pydoc
+
+Para abrir el navegador de documentación local:
+
+```bat
+python -m pydoc -b
+```
+
+Para generar un archivo HTML estático de un módulo:
+
+```bat
+python -m pydoc -w services.patrimonio_service
+```
+
+El comando escribe `services.patrimonio_service.html` en el directorio actual. Sustituye el nombre del módulo por otro, por ejemplo `data.excel_repository` o `ui.main_window`, para generar su documentación.
 
 ---
 
 ## 15. Configuración
 
-### Archivos de configuración
+### Módulo central
 
-No se observa archivo `.env`, `.ini`, `settings.json`, ni configuración central externa.
+`config/settings.py` centraliza los nombres y rutas de archivos, el esquema requerido del inventario, las extensiones de reportes y la carpeta de salida predeterminada. Usa la raíz del proyecto durante el desarrollo y `_MEIPASS` en el ejecutable de PyInstaller.
 
 ### Rutas relevantes
 
@@ -587,12 +638,7 @@ No se observa archivo `.env`, `.ini`, `settings.json`, ni configuración central
 
 ### Consideraciones
 
-La aplicación resuelve rutas dinámicamente para soportar:
-
-- entorno de desarrollo local
-- ejecutable generado con PyInstaller
-
-Esto se implementa con `obtener_ruta_recurso()` en `data/excel_repository.py` y `data/planilla_generator.py`.
+Los diálogos de guardado proponen `Documents/Relevo Patrimonio`, pero el usuario puede elegir otra carpeta. En esa carpeta también se escribe `relevo_patrimonio.log`.
 
 ---
 
@@ -731,17 +777,13 @@ El proyecto demuestra una combinación razonable de capacidades técnicas para u
 
 ### Corto plazo
 
-- Agregar validaciones adicionales antes de guardar registros.
-- Mejorar mensajes de error y manejo de archivos bloqueados.
-- Revisar y corregir inconsistencias de nombres en métodos y llamadas.
-- Documentar el formato exacto del archivo Excel de inventario.
+- Ampliar la cobertura con pruebas de interfaz de extremo a extremo cuando haya infraestructura gráfica disponible en CI.
+- Evaluar copias de seguridad automáticas del inventario antes de modificarlo.
 
 ### Mediano plazo
 
-- Incorporar pruebas unitarias e integración.
-- Añadir validación de columnas de Excel al iniciar la aplicación.
-- Mejorar la persistencia para permitir exportación de inventario y auditoría.
-- Centralizar lógica de configuración y rutas.
+- Añadir restauración guiada desde copias de seguridad.
+- Evaluar persistencia alternativa si el uso simultáneo por varios operadores se vuelve necesario.
 
 ### Largo plazo
 
@@ -754,17 +796,22 @@ El proyecto demuestra una combinación razonable de capacidades técnicas para u
 
 ## 24. Testing
 
-No se observan pruebas automatizadas en el repositorio.
+La suite usa `pytest` y cubre el servicio, el repositorio Excel, el generador de planillas, la presentación y la configuración/rutas.
 
-No existen carpetas como `tests/`, `pytest.ini`, `unittest` centralizados, ni fixtures de validación. También no se detectan `pytest` ni `unittest` invocados en la estructura del proyecto.
+Desde la raíz del proyecto, instala las dependencias de desarrollo y ejecuta todas las pruebas:
 
-### Lo que sería apropiado incorporar
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
 
-- pruebas para la búsqueda de productos por código
-- validación de duplicados en sesión
-- pruebas de generación de planillas
-- pruebas de lectura de `archivos/inventario.xlsx`
-- validación del flujo de alta manual
+Para ejecutar un archivo específico:
+
+```bash
+python -m pytest tests/test_excel_repository.py -q
+```
+
+GitHub Actions ejecuta `python -m pytest -q` en cada push y pull request.
 
 ---
 
@@ -781,15 +828,13 @@ El código tiene una estructura clara y modular, con responsabilidades separadas
 La calidad es aceptable para un proyecto de escritorio de tamaño mediano, aunque presenta algunas áreas que podrían mejorarse:
 
 - nombres de métodos no totalmente consistentes en algunos puntos
-- ausencia de tests
-- poca centralización de validaciones de archivos y rutas
-- lógica de negocio mezclada con comportamiento visual en algunos métodos
+- cobertura de pruebas de interfaz de extremo a extremo
 
 ---
 
 ## 26. Licencia
 
-No se encontró un archivo `LICENSE` ni una licencia declarada explícitamente en el repositorio. Por lo tanto, no se puede afirmar una licencia específica para el proyecto.
+El proyecto se distribuye bajo la licencia MIT. Consulta el archivo [`LICENSE`](LICENSE) para ver el texto completo y sus condiciones.
 
 ---
 
