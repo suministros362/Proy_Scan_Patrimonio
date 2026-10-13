@@ -1,45 +1,80 @@
+"""Generación de planillas Excel a partir de plantillas institucionales."""
+
 from datetime import datetime
+import logging
 import openpyxl
 from openpyxl.styles import Alignment
 import os
-import sys
 
 import xlrd
 from xlutils.copy import copy
 
-def obtener_ruta_recurso(ruta_relativa: str) -> str:
-    """
-    Obtiene la ruta absoluta para acceder a archivos/carpetas internos,
-    compatible con PyInstaller y el entorno de desarrollo local.
-    """
-    if hasattr(sys, '_MEIPASS'):
-        # Ruta cuando la app corre empaquetada como .exe
-        return os.path.join(sys._MEIPASS, ruta_relativa)
-    # Ruta cuando corre en modo desarrollo / script normal
-    return os.path.join(os.path.abspath("."), ruta_relativa)
+from config import settings
+
+logger = logging.getLogger(__name__)
+
 
 class PlanillaGenerator:
-    def __init__(self, ruta_plantilla_relevo=None, ruta_plantilla_busqueda=None):
-        # 📌 Si no se pasan rutas personalizadas, se resuelven dinámicamente
-        if ruta_plantilla_relevo is None:
-            self.ruta_plantilla_relevo = obtener_ruta_recurso(
-                os.path.join("plantillas", "plantilla_relevo.xlsx")
-            )
-        else:
-            self.ruta_plantilla_relevo = ruta_plantilla_relevo
+    """Rellena plantillas `.xlsx` y `.xls` con datos de relevamiento.
 
-        if ruta_plantilla_busqueda is None:
-            self.ruta_plantilla_busqueda = obtener_ruta_recurso(
-                os.path.join("plantillas", "plantilla_busqueda.xls")
-            )
-        else:
-            self.ruta_plantilla_busqueda = ruta_plantilla_busqueda
-    # def __init__(self, ruta_plantilla_relevo=os.path.join("plantillas", "plantilla_relevo.xlsx"), ruta_plantilla_busqueda=os.path.join("plantillas", "plantilla_busqueda.xls")):
-    #     self.ruta_plantilla_relevo = ruta_plantilla_relevo
-    #     self.ruta_plantilla_busqueda = ruta_plantilla_busqueda
+    Args:
+        ruta_plantilla_relevo: Ruta opcional de la plantilla de relevo.
+        ruta_plantilla_busqueda: Ruta opcional de la plantilla de búsqueda.
 
-    def generar_relevo(self, datos_encabezado: dict, productos: list, ruta_salida: str) -> bool:
-        """Llena la plantilla de relevo con los datos del formulario y los productos de la sesión."""
+    Returns:
+        Instancia de `PlanillaGenerator` con rutas resueltas.
+
+    Raises:
+        None.
+    """
+
+    def __init__(
+            self,
+            ruta_plantilla_relevo=None,
+            ruta_plantilla_busqueda=None):
+        """Configura las rutas de plantillas predeterminadas o personalizadas.
+
+        Args:
+            ruta_plantilla_relevo: Ruta opcional a la plantilla de relevo.
+            ruta_plantilla_busqueda: Ruta opcional a la plantilla `.xls`.
+
+        Returns:
+            None.
+
+        Raises:
+            None.
+        """
+        self.ruta_plantilla_relevo = (
+            ruta_plantilla_relevo or str(settings.RELEVO_TEMPLATE_PATH)
+        )
+        self.ruta_plantilla_busqueda = (
+            ruta_plantilla_busqueda or str(settings.SEARCH_TEMPLATE_PATH)
+        )
+
+    def generar_relevo(
+            self,
+            datos_encabezado: dict,
+            productos: list,
+            ruta_salida: str) -> bool:
+        """Genera un libro de relevo con metadatos y filas de bienes.
+
+        Args:
+            datos_encabezado: Valores del área y responsables para la cabecera.
+            productos: Productos que se escribirán desde la fila configurada.
+            ruta_salida: Ruta del archivo `.xlsx` que se creará.
+
+        Returns:
+            `True` si se guardó; `False` si falta la plantilla o falla.
+
+        Raises:
+            None: Los fallos se registran y se indican mediante `False`.
+        """
+        if not os.path.isfile(self.ruta_plantilla_relevo):
+            logger.error(
+                "No se encontró la plantilla de relevo requerida: %s",
+                self.ruta_plantilla_relevo)
+            return False
+
         try:
             wb = openpyxl.load_workbook(self.ruta_plantilla_relevo)
             ws = wb.active
@@ -56,12 +91,14 @@ class PlanillaGenerator:
             ws["F10"] = datos_encabezado.get("telefono", "")
 
             # Configuración de alineación con ajuste de texto
-            alineacion_centrado = Alignment(horizontal="center", vertical="center", wrap_text=True)
-            alineacion_texto = Alignment(horizontal="left", vertical="center", wrap_text=True)
+            alineacion_centrado = Alignment(
+                horizontal="center", vertical="center", wrap_text=True)
+            alineacion_texto = Alignment(
+                horizontal="left", vertical="center", wrap_text=True)
 
             ws["H5"].alignment = alineacion_centrado
             ws["C8"].alignment = alineacion_centrado
-            ws["C9"].alignment = alineacion_centrado    
+            ws["C9"].alignment = alineacion_centrado
             ws["C10"].alignment = alineacion_centrado
             ws["C11"].alignment = alineacion_centrado
 
@@ -78,8 +115,10 @@ class PlanillaGenerator:
                 ws[f"E{fila}"] = prod.marca
                 ws[f"F{fila}"] = prod.modelo
                 ws[f"G{fila}"] = prod.nro_serie
-                ws[f"H{fila}"] = prod.observaciones  # Agregando la columna de observaciones
-                ws[f"I{fila}"] = prod.sector.upper()  # Agregando la columna de sector
+                # Agregando la columna de observaciones
+                ws[f"H{fila}"] = prod.observaciones
+                # Agregando la columna de sector
+                ws[f"I{fila}"] = prod.sector.upper()
 
                 # Aplicar alineación
                 ws[f"A{fila}"].alignment = alineacion_centrado
@@ -89,37 +128,56 @@ class PlanillaGenerator:
                 ws[f"E{fila}"].alignment = alineacion_texto
                 ws[f"F{fila}"].alignment = alineacion_texto
                 ws[f"G{fila}"].alignment = alineacion_centrado
-                ws[f"H{fila}"].alignment = alineacion_texto  # Alineación para observaciones
-                ws[f"I{fila}"].alignment = alineacion_texto  # Alineación para sector
+                # Alineación para observaciones
+                ws[f"H{fila}"].alignment = alineacion_texto
+                # Alineación para sector
+                ws[f"I{fila}"].alignment = alineacion_texto
 
             # 3. Guardar en el destino elegido
             wb.save(ruta_salida)
             return True
 
-        except Exception as e:
-            print(f"Error al generar la planilla de relevo: {e}")
+        except Exception:
+            logger.exception(
+                "No se pudo generar la planilla de relevo: %s",
+                ruta_salida)
             return False
 
     def generar_busqueda(self, resultados: list, ruta_salida: str) -> bool:
-        """
-        Genera la planilla en formato .xls (Excel 97-2003).
-        Escribe los códigos en Columna A y luego los repite en Columna B 
-        a continuación de la última fila cargada en A.
-        """
-        try:
-            if not os.path.exists(self.ruta_plantilla_busqueda):
-                print(f"Error: No se encontró la plantilla .xls en {self.ruta_plantilla_busqueda}")
-                return False
+        """Genera la búsqueda masiva en formato Excel 97-2003.
 
-            # 1. Cargar el libro .xls existente (formatting_info=True conserva fuentes y estilos)
-            rb = xlrd.open_workbook(self.ruta_plantilla_busqueda, formatting_info=True)
-            
+        Los códigos se escriben en la columna A y luego en la B, a continuación
+        de los elementos escritos en A.
+
+        Args:
+            resultados: Objetos que proporcionan el atributo `nro_nuevo`.
+            ruta_salida: Ruta del archivo `.xls` que se creará.
+
+        Returns:
+            `True` si guardó; `False` si falta la plantilla o falla el proceso.
+
+        Raises:
+            None: Los fallos se registran y se indican mediante `False`.
+        """
+        if not os.path.isfile(self.ruta_plantilla_busqueda):
+            logger.error(
+                "No se encontró la plantilla de búsqueda requerida: %s",
+                self.ruta_plantilla_busqueda)
+            return False
+
+        try:
+            # 1. Cargar el libro .xls existente (formatting_info=True conserva
+            # fuentes y estilos)
+            rb = xlrd.open_workbook(
+                self.ruta_plantilla_busqueda,
+                formatting_info=True)
+
             # 2. Crear una copia modificable usando xlutils
             wb = copy(rb)
             ws = wb.get_sheet(0)  # Primera hoja
 
             # -------------------------------------------------------------
-            # 📌 NOTA: xlrd/xlwt usan índices base cero (0 = Columna A / Fila 1 = Fila 0)
+            # xlrd/xlwt use zero-based row and column indexes.
             # -------------------------------------------------------------
 
             # 4. Volcado de datos (Ejemplo: Fila 8 en Excel es índice 7)
@@ -132,7 +190,8 @@ class PlanillaGenerator:
                 codigo = getattr(item, "nro_nuevo", "")
                 ws.write(fila_actual_A, 0, codigo)  # Columna 0 = Columna A
 
-            # B) Pegar los MISMOS códigos en Columna B (Columna 1), a continuación de A
+            # B) Pegar los MISMOS códigos en Columna B (Columna 1), a
+            # continuación de A
             fila_inicio_B = fila_inicio_A + cantidad_elementos
 
             for i, item in enumerate(resultados):
@@ -142,12 +201,16 @@ class PlanillaGenerator:
 
             # 5. Guardar manteniendo el formato .xls
             # Asegurarse de que la extensión sea .xls
-            if not ruta_salida.lower().endswith(".xls"):
-                ruta_salida = os.path.splitext(ruta_salida)[0] + ".xls"
+            extension = settings.SEARCH_REPORT_EXTENSION
+            if not ruta_salida.lower().endswith(extension):
+                ruta_salida = os.path.splitext(
+                    ruta_salida)[0] + extension
 
             wb.save(ruta_salida)
             return True
 
-        except Exception as e:
-            print(f"Error al generar la planilla .xls: {e}")
+        except Exception:
+            logger.exception(
+                "No se pudo generar la planilla de búsqueda: %s",
+                ruta_salida)
             return False
