@@ -597,6 +597,14 @@ pip install -r requirements-dev.txt
 python app.py
 ```
 
+### Compilación del Ejecutable (.exe)
+
+Desde la raíz del repositorio, con el entorno virtual activado y las dependencias instaladas, ejecuta:
+
+```bash
+pyinstaller --noconsole --onefile --name "Relevo_Patrimonio_v1" --icon="assets/icono.ico" --collect-all ttkbootstrap --add-data "plantillas;plantillas" --add-data "archivos;archivos" --add-data "assets;assets" app.py
+```
+
 ### Ejecutar pruebas y lint
 
 Desde la raíz del repositorio:
